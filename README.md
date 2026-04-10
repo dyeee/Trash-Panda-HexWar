@@ -121,37 +121,8 @@
 
 ---
 
-## 💬 台詞設定位置
-
-台詞定義在 `src/components/game/GameBoard.tsx` 的 **`UNIT_QUOTES`** 常數：
-
-```typescript
-const UNIT_QUOTES: Record<string, Record<Player, string[]>> = {
-  [UnitType.Warrior]: {
-    [Player.Blue]: ["臭鼬幫台詞1", "台詞2", "台詞3", "台詞4", "台詞5", "台詞6"],
-    [Player.Red]:  ["浣熊幫台詞1", "台詞2", ...],
-  },
-  [UnitType.Cat]: {
-    [Player.Blue]: ["瘦橘貓藍方台詞..."],
-    [Player.Red]:  ["瘦橘貓紅方台詞..."],
-  },
-  // 每個 UnitType 都有對應的條目
-};
-```
-
-- 每個角色兩方各有 **6 條**台詞。
-- 顯示規則：依 `unit.id` 末碼對台詞數量取模，同一棋子每次 hover 固定顯示同一條。
-- 在右側角色欄位 **hover 角色圖片**時顯示對話泡泡。
-
----
-
 ## 🛠 技術資訊
 
 - **框架**：Next.js 14 + TypeScript
 - **渲染**：HTML Canvas API
-- **狀態管理**：`useReducer`（純函數 reducer）
 - **部署**：Netlify
-
-```bash
-npm ci --legacy-peer-deps && npm run dev
-```
