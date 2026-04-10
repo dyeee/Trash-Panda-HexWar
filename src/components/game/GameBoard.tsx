@@ -2,7 +2,7 @@
 // ============================================================
 // components/game/GameBoard.tsx — 墨綠撞色都市感版
 // ============================================================
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import { useGame }   from "@/hooks/useGame";
 import HexCanvas, { HexCanvasHandle } from "@/components/canvas/HexCanvas";
 import { triggerAttackFlash } from "@/lib/game/canvasRenderer";
@@ -73,6 +73,15 @@ export default function GameBoard({
   const canvasRef = useRef<HexCanvasHandle>(null);
   const [pendingSummon, setPendingSummon] = useState<UnitType | null>(null);
   const [log, setLog]   = useState("選擇兵種後點擊格子召喚，或點擊己方兵種移動 / 攻擊");
+  const [isMobile, setIsMobile] = useState(false);
+  const [panelOpen, setPanelOpen] = useState(false);
+
+  useEffect(() => {
+    const check = () => setIsMobile(window.innerWidth < 768);
+    check();
+    window.addEventListener("resize", check);
+    return () => window.removeEventListener("resize", check);
+  }, []);
 
   const { turn, scores, winner, phase, units, selectedUnitId, tiles } = state;
   const isPlaying = phase === "playing";
@@ -110,30 +119,44 @@ export default function GameBoard({
     const clickedUnit = units.find(u => u.position.q === coord.q && u.position.r === coord.r);
     if (selUnit && clickedUnit && clickedUnit.owner !== selUnit.owner) {
       triggerAttackFlash(selUnit.id);
-      // +1 彈出條件：攻擊者尚未攻擊、不是不死小強、累積傷害達閾值
+      // +1 彈出條件：攻擊者尚未攻擊、在射程內、不是不死小強、累積傷害達閾值
       if (!selUnit.hasAttacked) {
-        const defTile      = tiles.find(t => t.coord.q === coord.q && t.coord.r === coord.r);
-        const isImmortal   = clickedUnit.specialAbilities?.includes(SpecialAbility.Immortal) ?? false;
-        const aquaticBonus = (clickedUnit.specialAbilities?.includes(SpecialAbility.Aquatic) && defTile?.terrain === TerrainType.Water) ? 1 : 0;
-        const defBonus     = defTile ? (TERRAIN_EFFECTS[defTile.terrain]?.defBonus ?? 0) : 0;
-        // 鼠修女加成
-        const blessingBonus = units.some(u =>
-          u.owner === clickedUnit.owner && u.id !== clickedUnit.id &&
-          u.specialAbilities?.includes(SpecialAbility.Blessing) &&
-          hexDistance(u.position, clickedUnit.position) <= 1
-        ) ? 2 : 0;
-        // 看門狗減免（÷2 後無條件進位）
-        const hasWildBark = units.some(u =>
-          u.owner !== clickedUnit.owner &&
-          u.specialAbilities?.includes(SpecialAbility.WildBark) &&
-          hexDistance(u.position, clickedUnit.position) <= 1
-        );
-        let effectiveDef = (BASE_STATS[clickedUnit.type]?.def ?? 0) + defBonus + aquaticBonus + blessingBonus;
-        if (hasWildBark) effectiveDef = Math.ceil(effectiveDef / 2);
-        const prevDmg  = state.pendingDamage?.[clickedUnit.id] ?? 0;
-        const totalDmg = prevDmg + selUnit.currentAtk;
-        if (!isImmortal && totalDmg >= effectiveDef) {
-          setTimeout(() => canvasRef.current?._addPopup?.(GAME_RULES.KILL_SCORE, selUnit.owner, clickedUnit.position), 150);
+        const myTile   = tiles.find(t => t.coord.q === selUnit.position.q && t.coord.r === selUnit.position.r);
+        const myEffect = myTile ? TERRAIN_EFFECTS[myTile.terrain] : null;
+        const isAerial  = selUnit.specialAbilities?.includes(SpecialAbility.Aerial);
+        const isAquatic = selUnit.specialAbilities?.includes(SpecialAbility.Aquatic);
+        // 計算有效射程
+        let effectiveRng = selUnit.baseStats.rng;
+        if (!isAerial) {
+          if (myEffect?.meleeOnly) effectiveRng = 1;
+          if (isAquatic && myTile?.terrain !== TerrainType.Water) effectiveRng = 0; // 陸地水中不能攻
+          if (!isAquatic && myTile?.terrain === TerrainType.Water) effectiveRng = 0; // 普通在水域不能攻
+          if (myTile?.terrain === TerrainType.Mountain && selUnit.type === UnitType.Cavalry) effectiveRng = 0;
+        }
+        const dist = hexDistance(selUnit.position, coord);
+        // 在射程內才處理
+        if (dist <= effectiveRng && effectiveRng > 0) {
+          const defTile      = tiles.find(t => t.coord.q === coord.q && t.coord.r === coord.r);
+          const isImmortal   = clickedUnit.specialAbilities?.includes(SpecialAbility.Immortal) ?? false;
+          const aquaticBonus = (clickedUnit.specialAbilities?.includes(SpecialAbility.Aquatic) && defTile?.terrain === TerrainType.Water) ? 1 : 0;
+          const defBonus     = defTile ? (TERRAIN_EFFECTS[defTile.terrain]?.defBonus ?? 0) : 0;
+          const blessingBonus = units.some(u =>
+            u.owner === clickedUnit.owner && u.id !== clickedUnit.id &&
+            u.specialAbilities?.includes(SpecialAbility.Blessing) &&
+            hexDistance(u.position, clickedUnit.position) <= 1
+          ) ? 2 : 0;
+          const hasWildBark = units.some(u =>
+            u.owner !== clickedUnit.owner &&
+            u.specialAbilities?.includes(SpecialAbility.WildBark) &&
+            hexDistance(u.position, clickedUnit.position) <= 1
+          );
+          let effectiveDef = (BASE_STATS[clickedUnit.type]?.def ?? 0) + defBonus + aquaticBonus + blessingBonus;
+          if (hasWildBark) effectiveDef = Math.ceil(effectiveDef / 2);
+          const prevDmg  = state.pendingDamage?.[clickedUnit.id] ?? 0;
+          const totalDmg = prevDmg + selUnit.currentAtk;
+          if (!isImmortal && totalDmg >= effectiveDef) {
+            setTimeout(() => canvasRef.current?._addPopup?.(GAME_RULES.KILL_SCORE, selUnit.owner, clickedUnit.position), 150);
+          }
         }
       }
     }
@@ -150,22 +173,29 @@ export default function GameBoard({
     const cur   = turn.currentPlayer;
     const enemy = cur === Player.Blue ? Player.Red : Player.Blue;
 
-    // 城鎮 +2 彈出
+    // 城鎮 +2 彈出（哲學家在城鎮時，城鎮加分彈出只算一般 +2，哲學家額外加分另外彈）
     tiles.filter(t => t.terrain === "town" && t.occupiedBy).forEach(t => {
       const occ = units.find(u => u.id === t.occupiedBy);
-      if (occ && occ.owner === cur)
-        setTimeout(() => canvasRef.current?._addPopup?.(GAME_RULES.TOWN_SCORE_PER_TURN, occ.owner, t.coord), 100);
+      if (occ && occ.owner === cur) {
+        // 哲學家：城鎮基本 +2 不重複彈，只靠下方 TownBonus 處理兩次
+        if (!occ.specialAbilities.includes(SpecialAbility.TownBonus)) {
+          setTimeout(() => canvasRef.current?._addPopup?.(GAME_RULES.TOWN_SCORE_PER_TURN, occ.owner, t.coord), 100);
+        }
+      }
     });
     // 搜集癖（烏鴉）+1
     units.filter(u => u.owner === cur && u.specialAbilities.includes(SpecialAbility.Collector))
       .forEach(u => setTimeout(() => canvasRef.current?._addPopup?.(1, u.owner, u.position), 150));
-    // 垃圾哲學家在城鎮：兩次 +2
+    // 垃圾哲學家在城鎮：reducer 給 +2（城鎮本身）+ 額外 +2，前端顯示三次... 
+    // 實際分數：城鎮+2 + 哲學家TownBonus+2 = +4，顯示兩次 +2
     units.filter(u => u.owner === cur && u.specialAbilities.includes(SpecialAbility.TownBonus))
       .forEach(u => {
         const onTown = tiles.some(t => t.terrain === "town" && t.coord.q === u.position.q && t.coord.r === u.position.r);
         if (onTown) {
-          setTimeout(() => canvasRef.current?._addPopup?.(2, u.owner, u.position), 200);
-          setTimeout(() => canvasRef.current?._addPopup?.(2, u.owner, u.position), 500);
+          // 城鎮自身 +2（哲學家本身也佔城鎮，所以要顯示一次）
+          setTimeout(() => canvasRef.current?._addPopup?.(2, u.owner, u.position), 100);
+          // 額外哲學家加成 +2
+          setTimeout(() => canvasRef.current?._addPopup?.(2, u.owner, u.position), 400);
         }
       });
     // 摸金（負鼠）：週邊有敵 → +1
@@ -185,12 +215,225 @@ export default function GameBoard({
     ? SPAWN_ZONES[turn.currentPlayer].filter(c => !units.some(u => u.position.q === c.q && u.position.r === c.r))
     : [];
   const allHighlights = pendingSummon ? spawnHL : highlightedCoords;
-
-  if (winner && onGameEnd) {
-    // 只在 handleEndTurn 裡呼叫，這裡不重複
-  }
   const pNames: Record<Player, string> = { [Player.Blue]: blueName, [Player.Red]: redName };
 
+  // 召喚按鈕內容（桌機/手機共用）
+  const SummonPanel = () => (
+    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+      {([UnitType.Warrior, UnitType.Archer, UnitType.Cavalry] as UnitType[]).map(type => {
+        const stats   = BASE_STATS[type];
+        const onField = units.filter(u => u.owner === turn.currentPlayer && u.type === type).length;
+        return (
+          <SummonBtn key={type}
+            label={UNIT_VISUAL[type].label} cost={stats.summonCost}
+            count={`${onField}/${stats.maxCount}`}
+            selected={pendingSummon === type}
+            disabled={scores[turn.currentPlayer] < stats.summonCost || onField >= stats.maxCount}
+            onClick={() => handleSummonSelect(type)}
+          />
+        );
+      })}
+      {(state.availableSpecials[turn.currentPlayer] ?? []).map(type => {
+        const stats   = BASE_STATS[type];
+        const vis     = UNIT_VISUAL[type];
+        const onField = units.filter(u => u.owner === turn.currentPlayer && u.type === type).length;
+        return (
+          <SummonBtn key={type}
+            label={vis.label} cost={stats.summonCost}
+            count={`${onField}/${stats.maxCount}`}
+            selected={pendingSummon === type}
+            disabled={scores[turn.currentPlayer] < stats.summonCost || onField >= stats.maxCount}
+            onClick={() => handleSummonSelect(type)}
+            accent={vis.color} tag="特殊"
+          />
+        );
+      })}
+    </div>
+  );
+
+  if (isMobile) {
+    // ── 手機版佈局 ────────────────────────────────────────────
+    return (
+      <div style={{
+        display: "flex", flexDirection: "column", height: "100dvh",
+        background: C.bg, fontFamily: "'Noto Sans TC','Microsoft JhengHei',sans-serif",
+        color: C.text, overflow: "hidden",
+      }}>
+        {/* Header 手機版 — 緊湊 */}
+        <header style={{
+          display: "flex", alignItems: "center", justifyContent: "space-between",
+          padding: "0 10px", height: 48, flexShrink: 0,
+          background: C.header, borderBottom: `1.5px solid ${C.border}`,
+        }}>
+          <MobileChip name={blueName} score={scores[Player.Blue]} color={C.blue}
+            active={turn.currentPlayer === Player.Blue && isPlaying} />
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <span style={{ fontSize: "0.7rem", color: C.muted, background: C.card,
+              borderRadius: 6, padding: "2px 6px", border: `1px solid ${C.border}` }}>
+              R{turn.round}
+            </span>
+            <div style={{ display: "flex", gap: 3 }}>
+              {Array.from({ length: GAME_RULES.AP_PER_TURN }, (_, i) => (
+                <div key={i} style={{
+                  width: 8, height: 8, borderRadius: "50%",
+                  background: i < turn.ap ? C.accent : "#2E3E36",
+                  border: `1.5px solid ${i < turn.ap ? C.accentD : "#3A4E44"}`,
+                }} />
+              ))}
+            </div>
+          </div>
+          <MobileChip name={redName} score={scores[Player.Red]} color={C.red}
+            active={turn.currentPlayer === Player.Red && isPlaying} reverse />
+        </header>
+
+        {/* Canvas — 佔大部分空間 */}
+        <div style={{ flex: 1, position: "relative", overflow: "hidden", background: "#243028" }}>
+          <HexCanvas ref={canvasRef} state={state} highlights={allHighlights} onTileClick={handleCanvasClick} />
+          <TerrainLegend />
+
+          {/* 開局遮罩 */}
+          {isSetup && (
+            <div style={s.overlay}>
+              <div style={{
+                background: C.card, border: `1.5px solid ${C.border}`,
+                borderRadius: 16, padding: "20px 16px",
+                textAlign: "center", width: "92vw", maxWidth: 480,
+                display: "flex", flexDirection: "column", alignItems: "center",
+                maxHeight: "90dvh", overflow: "auto",
+              }}>
+                <h2 style={{ ...s.overlayTitle, fontSize: "1.1rem", margin: "0 0 6px" }}>🗺 戰場佈置</h2>
+                <p style={{ color: C.muted, fontSize: "0.75rem", margin: "0 0 12px" }}>城鎮固定・其他地形隨機</p>
+                <div style={{ width: "100%", marginBottom: 12 }}>
+                  <div style={{ fontSize: "0.75rem", color: C.accent, fontWeight: 800, marginBottom: 8 }}>本局特殊角色</div>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                    {([Player.Blue, Player.Red] as const).map(side => {
+                      const sideColor = side === Player.Blue ? C.blue : C.red;
+                      const specials  = state.availableSpecials[side] ?? [];
+                      return (
+                        <div key={side} style={{ background: C.bg, border: `1.5px solid ${sideColor}55`, borderRadius: 10, padding: "8px 6px" }}>
+                          <div style={{ fontSize: "0.72rem", fontWeight: 800, color: sideColor, textAlign: "center", marginBottom: 6 }}>
+                            {side === Player.Blue ? "藍方" : "紅方"}
+                          </div>
+                          {specials.map(type => {
+                            const vis   = UNIT_VISUAL[type];
+                            const stats = BASE_STATS[type];
+                            const desc  = SPECIAL_ABILITY_DESC[stats.specialAbility!] ?? "";
+                            return (
+                              <div key={type} style={{ background: C.card, borderRadius: 8, padding: "6px", marginBottom: 6, display: "flex", gap: 6 }}>
+                                <img src={vis.img} alt={vis.label} style={{ width: 40, height: 40, objectFit: "contain", flexShrink: 0 }} />
+                                <div style={{ flex: 1, minWidth: 0 }}>
+                                  <div style={{ fontWeight: 800, fontSize: "0.78rem", color: vis.color }}>{vis.label}</div>
+                                  <div style={{ fontSize: "0.6rem", color: C.muted, lineHeight: 1.3, marginTop: 2 }}>{desc}</div>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+                <div style={{ display: "flex", gap: 10 }}>
+                  <button style={{ ...s.btnGhost, padding: "8px 14px", fontSize: "0.82rem" }} onClick={reshuffle}>↺ 重抽</button>
+                  <button style={{ ...s.btnPrimary, padding: "8px 16px", fontSize: "0.82rem" }} onClick={confirmMap}>確認開局 →</button>
+                </div>
+              </div>
+            </div>
+          )}
+          {winner && (
+            <div style={s.overlay}>
+              <div style={{ background: C.card, border: `1.5px solid ${C.border}`, borderRadius: 16, padding: "28px 24px", textAlign: "center" }}>
+                <div style={{ fontSize: "2.5rem" }}>🏆</div>
+                <h2 style={{ ...s.overlayTitle, color: winner === Player.Blue ? C.blue : C.red }}>{pNames[winner]} 勝利！</h2>
+                <div style={{ display: "flex", gap: 16, fontSize: "0.9rem", fontWeight: 700 }}>
+                  <span style={{ color: C.blue }}>{blueName} {scores[Player.Blue]}pt</span>
+                  <span style={{ color: C.muted }}>vs</span>
+                  <span style={{ color: C.red }}>{redName} {scores[Player.Red]}pt</span>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* 底部面板：行動列 + 折疊召喚區 */}
+        <div style={{ background: C.panel, borderTop: `1.5px solid ${C.border}`, flexShrink: 0 }}>
+          {/* 主行動列 */}
+          <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px" }}>
+            <button style={{ ...s.btnGhost, padding: "7px 12px", fontSize: "0.78rem" }}
+              onClick={handleCancel} disabled={!isPlaying}>✕</button>
+            <button
+              style={{ ...s.btnPrimary, flex: 1, padding: "9px 12px", fontSize: "0.82rem",
+                opacity: (!isPlaying || !!winner) ? 0.35 : 1 }}
+              onClick={handleEndTurn} disabled={!isPlaying || !!winner}>
+              結束回合 →
+            </button>
+            {isPlaying && (
+              <button
+                style={{
+                  padding: "7px 14px", borderRadius: 10, fontFamily: "inherit",
+                  fontSize: "0.78rem", fontWeight: 700, cursor: "pointer",
+                  border: `1.5px solid ${panelOpen ? C.accent : C.border}`,
+                  background: panelOpen ? `${C.accent}22` : C.card,
+                  color: panelOpen ? C.accent : C.muted,
+                }}
+                onClick={() => setPanelOpen(o => !o)}>
+                ⚔️ {panelOpen ? "▼" : "▲"}
+              </button>
+            )}
+          </div>
+          {/* 狀態 log */}
+          <div style={{ padding: "0 10px 6px", fontSize: "0.7rem", color: C.muted,
+            overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            {log}
+          </div>
+          {/* 折疊召喚區 */}
+          {isPlaying && panelOpen && (
+            <div style={{
+              borderTop: `1px solid ${C.border}`,
+              padding: "10px",
+              maxHeight: "38dvh", overflow: "auto",
+            }}>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
+                {[UnitType.Warrior, UnitType.Archer, UnitType.Cavalry, ...(state.availableSpecials[turn.currentPlayer] ?? [])].map(type => {
+                  const stats   = BASE_STATS[type];
+                  const vis     = UNIT_VISUAL[type];
+                  const isSpec  = stats.isSpecial;
+                  const onField = units.filter(u => u.owner === turn.currentPlayer && u.type === type).length;
+                  const canAff  = scores[turn.currentPlayer] >= stats.summonCost;
+                  const atLim   = onField >= stats.maxCount;
+                  const ac      = isSpec ? vis.color : C.accent;
+                  return (
+                    <button key={type} onClick={() => { handleSummonSelect(type); setPanelOpen(false); }}
+                      disabled={!canAff || atLim}
+                      style={{
+                        display: "flex", flexDirection: "column", alignItems: "center", gap: 3,
+                        padding: "8px 6px", borderRadius: 10, fontFamily: "inherit",
+                        border: `1.5px solid ${pendingSummon === type ? ac : C.border}`,
+                        background: pendingSummon === type ? `${ac}22` : C.card,
+                        cursor: (!canAff || atLim) ? "not-allowed" : "pointer",
+                        opacity: (!canAff || atLim) ? 0.35 : 1,
+                      }}>
+                      {isSpec && vis.img
+                        ? <img src={vis.img} style={{ width: 36, height: 36, objectFit: "contain" }} alt={vis.label} />
+                        : <span style={{ fontSize: "1.4rem" }}>
+                            {type === UnitType.Warrior ? "⚔️" : type === UnitType.Archer ? "🎯" : "🐴"}
+                          </span>
+                      }
+                      <span style={{ fontSize: "0.68rem", fontWeight: 700, color: isSpec ? ac : C.text }}>{vis.label}</span>
+                      <span style={{ fontSize: "0.62rem", color: ac, fontWeight: 800 }}>−{stats.summonCost}pt</span>
+                      <span style={{ fontSize: "0.6rem", color: C.muted }}>{onField}/{stats.maxCount}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // ── 桌機版佈局 ───────────────────────────────────────────────
   return (
     <div style={s.root}>
 
@@ -232,8 +475,6 @@ export default function GameBoard({
         {/* Canvas + 左下角地形說明 */}
         <div style={s.canvasWrap}>
           <HexCanvas ref={canvasRef} state={state} highlights={allHighlights} onTileClick={handleCanvasClick} />
-
-          {/* 左下角地形說明 */}
           <TerrainLegend />
 
           {/* 開局遮罩 */}
@@ -242,32 +483,17 @@ export default function GameBoard({
               <div style={{ ...s.overlayCard, maxWidth: 560, width: "90%" }}>
                 <div style={{ fontSize: "2.4rem", marginBottom: 4 }}>🗺</div>
                 <h2 style={s.overlayTitle}>戰場佈置</h2>
-                <p style={{ color: C.muted, fontSize: "0.82rem", margin: "0 0 16px" }}>
-                  城鎮固定・其他地形隨機
-                </p>
-
-                {/* 本局特殊角色展示 — 左藍右紅 */}
+                <p style={{ color: C.muted, fontSize: "0.82rem", margin: "0 0 16px" }}>城鎮固定・其他地形隨機</p>
                 <div style={{ width: "100%", marginBottom: 16 }}>
-                  <div style={{ fontSize: "0.85rem", color: C.accent, fontWeight: 800,
-                    letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 10 }}>
-                    本局特殊角色
-                  </div>
+                  <div style={{ fontSize: "0.85rem", color: C.accent, fontWeight: 800, letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 10 }}>本局特殊角色</div>
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
                     {([Player.Blue, Player.Red] as const).map(side => {
                       const sideColor = side === Player.Blue ? C.blue : C.red;
                       const sideLabel = side === Player.Blue ? "藍方" : "紅方";
                       const specials  = state.availableSpecials[side] ?? [];
                       return (
-                        <div key={side} style={{
-                          background: C.bg,
-                          border: `1.5px solid ${sideColor}55`,
-                          borderRadius: 12, padding: "10px 8px",
-                        }}>
-                          <div style={{
-                            fontSize: "0.82rem", fontWeight: 800, color: sideColor,
-                            textAlign: "center", marginBottom: 8,
-                            letterSpacing: "0.08em",
-                          }}>
+                        <div key={side} style={{ background: C.bg, border: `1.5px solid ${sideColor}55`, borderRadius: 12, padding: "10px 8px" }}>
+                          <div style={{ fontSize: "0.82rem", fontWeight: 800, color: sideColor, textAlign: "center", marginBottom: 8, letterSpacing: "0.08em" }}>
                             {sideLabel}
                           </div>
                           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
@@ -276,31 +502,16 @@ export default function GameBoard({
                               const stats = BASE_STATS[type];
                               const desc  = SPECIAL_ABILITY_DESC[stats.specialAbility!] ?? "";
                               return (
-                                <div key={type} style={{
-                                  background: C.card,
-                                  border: `1px solid ${C.border}`,
-                                  borderRadius: 10, padding: "8px",
-                                  display: "flex", gap: 8, alignItems: "center",
-                                }}>
-                                  <img src={vis.img} alt={vis.label}
-                                    style={{ width: 52, height: 52, objectFit: "contain", flexShrink: 0,
-                                      filter: `drop-shadow(0 2px 6px ${vis.color}88)` }} />
+                                <div key={type} style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 10, padding: "8px", display: "flex", gap: 8, alignItems: "center" }}>
+                                  <img src={vis.img} alt={vis.label} style={{ width: 52, height: 52, objectFit: "contain", flexShrink: 0, filter: `drop-shadow(0 2px 6px ${vis.color}88)` }} />
                                   <div style={{ flex: 1, minWidth: 0 }}>
-                                    <div style={{ fontWeight: 800, fontSize: "0.92rem", color: vis.color, marginBottom: 3 }}>
-                                      {vis.label}
-                                    </div>
+                                    <div style={{ fontWeight: 800, fontSize: "0.92rem", color: vis.color, marginBottom: 3 }}>{vis.label}</div>
                                     <div style={{ display: "flex", gap: 3, flexWrap: "wrap", marginBottom: 4 }}>
                                       {[`ATK ${stats.atk}`,`DEF ${stats.def}`,`ROM ${stats.rom}`,`RNG ${stats.rng}`].map(d => (
-                                        <span key={d} style={{
-                                          fontSize: "0.68rem", background: `${C.accent}18`,
-                                          color: C.accent, padding: "1px 5px", borderRadius: 4,
-                                          border: `1px solid ${C.accent}33`,
-                                        }}>{d}</span>
+                                        <span key={d} style={{ fontSize: "0.68rem", background: `${C.accent}18`, color: C.accent, padding: "1px 5px", borderRadius: 4, border: `1px solid ${C.accent}33` }}>{d}</span>
                                       ))}
                                     </div>
-                                    <div style={{ fontSize: "0.72rem", color: C.muted, lineHeight: 1.35 }}>
-                                      {desc}
-                                    </div>
+                                    <div style={{ fontSize: "0.72rem", color: C.muted, lineHeight: 1.35 }}>{desc}</div>
                                   </div>
                                 </div>
                               );
@@ -311,7 +522,6 @@ export default function GameBoard({
                     })}
                   </div>
                 </div>
-
                 <div style={{ display: "flex", gap: 12 }}>
                   <button style={s.btnGhost} onClick={reshuffle}>↺ 重新抽卡</button>
                   <button style={s.btnPrimary} onClick={confirmMap}>確認開局 →</button>
@@ -325,9 +535,7 @@ export default function GameBoard({
             <div style={s.overlay}>
               <div style={s.overlayCard}>
                 <div style={{ fontSize: "3.5rem", marginBottom: 4 }}>🏆</div>
-                <h2 style={{ ...s.overlayTitle, color: winner === Player.Blue ? C.blue : C.red }}>
-                  {pNames[winner]} 勝利！
-                </h2>
+                <h2 style={{ ...s.overlayTitle, color: winner === Player.Blue ? C.blue : C.red }}>{pNames[winner]} 勝利！</h2>
                 <div style={{ display: "flex", gap: 20, margin: "12px 0", fontSize: "1rem", fontWeight: 700 }}>
                   <span style={{ color: C.blue }}>{blueName} {scores[Player.Blue]}pt</span>
                   <span style={{ color: C.muted }}>vs</span>
@@ -339,72 +547,22 @@ export default function GameBoard({
         </div>
 
         {/* ── 右側面板 ── */}
-        <aside style={{
-          ...s.panel,
-          display: "flex",
-          flexDirection: "column",
-          // 讓 portrait 和 section 共用空間
-        }}>
-
-          {/* 棋子大圖區 — flex:1 填滿剩餘 */}
+        <aside style={{ ...s.panel, display: "flex", flexDirection: "column" }}>
           <UnitPortrait unit={selectedUnit} state={state} />
-
-          {/* 召喚按鈕 */}
           {isPlaying && (
             <div style={{ ...s.section, flexShrink: 0, marginTop: 10 }}>
               <div style={s.sectionLabel}>召喚兵種</div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                {/* 普通兵種 */}
-                {([UnitType.Warrior, UnitType.Archer, UnitType.Cavalry] as UnitType[]).map(type => {
-                  const stats     = BASE_STATS[type];
-                  const onField   = units.filter(u => u.owner === turn.currentPlayer && u.type === type).length;
-                  const canAfford = scores[turn.currentPlayer] >= stats.summonCost;
-                  const atLimit   = onField >= stats.maxCount;
-                  return (
-                    <SummonBtn key={type}
-                      label={UNIT_VISUAL[type].label}
-                      cost={stats.summonCost}
-                      count={`${onField}/${stats.maxCount}`}
-                      selected={pendingSummon === type}
-                      disabled={!canAfford || atLimit}
-                      onClick={() => handleSummonSelect(type)}
-                    />
-                  );
-                })}
-                {/* 特殊角色（當前行動方自己的） */}
-                {(state.availableSpecials[turn.currentPlayer] ?? []).map(type => {
-                  const stats     = BASE_STATS[type];
-                  const vis       = UNIT_VISUAL[type];
-                  const onField   = units.filter(u => u.owner === turn.currentPlayer && u.type === type).length;
-                  const canAfford = scores[turn.currentPlayer] >= stats.summonCost;
-                  const atLimit   = onField >= stats.maxCount;
-                  return (
-                    <SummonBtn key={type}
-                      label={vis.label}
-                      cost={stats.summonCost}
-                      count={`${onField}/${stats.maxCount}`}
-                      selected={pendingSummon === type}
-                      disabled={!canAfford || atLimit}
-                      onClick={() => handleSummonSelect(type)}
-                      accent={vis.color}
-                      tag="特殊"
-                    />
-                  );
-                })}
-              </div>
+              <SummonPanel />
             </div>
           )}
-
         </aside>
       </div>
 
       {/* ── Footer ── */}
       <footer style={s.footer}>
         <button style={s.btnGhost} onClick={handleCancel} disabled={!isPlaying}>✕ 取消</button>
-        <button
-          style={{ ...s.btnPrimary, opacity: (!isPlaying || !!winner) ? 0.35 : 1 }}
-          onClick={handleEndTurn} disabled={!isPlaying || !!winner}
-        >
+        <button style={{ ...s.btnPrimary, opacity: (!isPlaying || !!winner) ? 0.35 : 1 }}
+          onClick={handleEndTurn} disabled={!isPlaying || !!winner}>
           結束回合 →
         </button>
         <span style={s.logText}>{log}</span>
@@ -432,6 +590,27 @@ function PlayerChip({ name, score, color, active, reverse = false }: {
       <span style={{ width: 9, height: 9, borderRadius: "50%", background: color, flexShrink: 0 }} />
       <span style={{ fontSize: "0.82rem", color: C.muted }}>{name}</span>
       <span style={{ fontWeight: 900, fontSize: "1.2rem", color, marginLeft: 2 }}>{score}</span>
+    </div>
+  );
+}
+
+// ── MobileChip：手機版緊湊分數顯示 ──────────────────────────
+function MobileChip({ name, score, color, active, reverse = false }: {
+  name: string; score: number; color: string; active: boolean; reverse?: boolean;
+}) {
+  return (
+    <div style={{
+      display: "flex", alignItems: "center",
+      flexDirection: reverse ? "row-reverse" : "row",
+      gap: 5,
+      padding: "3px 10px", borderRadius: 999,
+      border: `1.5px solid ${active ? color : C.border}`,
+      background: active ? `${color}18` : "transparent",
+      transition: "all 0.3s",
+    }}>
+      <span style={{ width: 7, height: 7, borderRadius: "50%", background: color, flexShrink: 0 }} />
+      <span style={{ fontSize: "0.7rem", color: C.muted, maxWidth: 60, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{name}</span>
+      <span style={{ fontWeight: 900, fontSize: "1rem", color }}>{score}</span>
     </div>
   );
 }
@@ -471,7 +650,7 @@ const UNIT_QUOTES: Record<string, Record<Player, string[]>> = {
       "老子連狙擊都懂！",
       "遠遠地就能幹掉你！",
       "這一罐送你免費的。",
-      "垃圾堆也能撿到槍！吃驚嗎？",
+      "浣熊也會遠程！吃驚嗎？",
       "垃圾桶旁邊練出來的準度！",
     ],
   },
