@@ -3,7 +3,7 @@
 // ============================================================
 import { GameState, Unit, Player, TerrainType, ScorePopup } from "@/types";
 import { UNIT_VISUAL, PLAYER_VISUAL, DEFAULT_CANVAS_CONFIG, TERRAIN_EFFECTS } from "@/constants";
-import { hexToPixel, hexCorners, coordKey } from "@/lib/utils/hex";
+import { hexToPixel, hexCorners, coordKey, hexDistance } from "@/lib/utils/hex";
 
 // ── PNG 快取（改用 PNG，不再旋轉） ───────────────────────────
 const imgCache = new Map<TerrainType, HTMLImageElement>();
@@ -198,11 +198,32 @@ export function renderGame(
     // ── 累積傷害條（被圍攻時顯示） ──────────────────────────
     const dmg = state.pendingDamage?.[unit.id] ?? 0;
     if (dmg > 0) {
-      // 取得防守方有效 DEF（含地形加成）
-      const defTile   = state.tiles.find(t => coordKey(t.coord) === coordKey(unit.position));
-      const defBonus  = defTile ? (TERRAIN_EFFECTS[defTile.terrain]?.defBonus ?? 0) : 0;
-      const effDef    = unit.baseStats.def + defBonus;
-      const ratio     = Math.min(dmg / effDef, 1);
+      const defTile  = state.tiles.find(t => coordKey(t.coord) === coordKey(unit.position));
+      const terrain  = defTile?.terrain ?? "plain";
+      const defBonus = (TERRAIN_EFFECTS as any)[terrain]?.defBonus ?? 0;
+
+      // 鼠修女 Blessing +2
+      const blessingBonus = state.units.some(u =>
+        u.owner === unit.owner && u.id !== unit.id &&
+        u.specialAbilities?.includes("blessing" as any) &&
+        hexDistance(u.position, unit.position) <= 1
+      ) ? 2 : 0;
+
+      // 看門狗 WildBark ÷2
+      const hasWildBark = state.units.some(u =>
+        u.owner !== unit.owner &&
+        u.specialAbilities?.includes("wildbark" as any) &&
+        hexDistance(u.position, unit.position) <= 1
+      );
+
+      // 水中單位在水域 +1
+      const aquaticBonus =
+        unit.specialAbilities?.includes("aquatic" as any) && terrain === "water" ? 1 : 0;
+
+      let effDef = unit.baseStats.def + defBonus + blessingBonus + aquaticBonus;
+      if (hasWildBark) effDef = Math.ceil(effDef / 2);
+
+      const ratio = Math.min(dmg / effDef, 1);
 
       const bw = r * 2.2;
       const bh = 5;

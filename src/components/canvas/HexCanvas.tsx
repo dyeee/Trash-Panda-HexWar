@@ -176,13 +176,46 @@ const HexCanvas = forwardRef<HexCanvasHandle, HexCanvasProps>(function HexCanvas
     if (effect.meleeOnly)       lines.push({ label: "限制", value: "僅近戰" });
     if (effect.cannotAttack)    lines.push({ label: "限制", value: "水域不可攻擊" });
 
-    // 滑鼠在單位上：顯示單位數值（包含敵方），無 HP
+    // 滑鼠在單位上：顯示單位數值（含 Blessing / WildBark 動態 DEF）
     if (hoverUnit) {
-      const uVis   = UNIT_VISUAL[hoverUnit.type];
-      const uStats = BASE_STATS[hoverUnit.type];       // 使用 baseStats 確保正確
-      const effDef = uStats.def + effect.defBonus;
+      const uStats   = BASE_STATS[hoverUnit.type];
+      const baseDef  = uStats.def + effect.defBonus;
+
+      // 鼠修女 Blessing：週邊1格友方有修女 → DEF+2
+      const blessingBonus = state.units.some(u =>
+        u.owner === hoverUnit.owner &&
+        u.id !== hoverUnit.id &&
+        u.specialAbilities?.includes("blessing" as any) &&
+        hexDistance(u.position, hoverUnit.position) <= 1
+      ) ? 2 : 0;
+
+      // 看門狗 WildBark：週邊1格有敵方看門狗 → DEF÷2
+      const hasWildBark = state.units.some(u =>
+        u.owner !== hoverUnit.owner &&
+        u.specialAbilities?.includes("wildbark" as any) &&
+        hexDistance(u.position, hoverUnit.position) <= 1
+      );
+
+      // 水中單位在水域 DEF+1
+      const aquaticBonus =
+        hoverUnit.specialAbilities?.includes("aquatic" as any) &&
+        tile.terrain === "water" ? 1 : 0;
+
+      let effDef = baseDef + blessingBonus + aquaticBonus;
+      if (hasWildBark) effDef = Math.ceil(effDef / 2);
+
+      const defParts: string[] = [];
+      if (effect.defBonus)   defParts.push(`地形+${effect.defBonus}`);
+      if (blessingBonus)     defParts.push(`修女+${blessingBonus}`);
+      if (aquaticBonus)      defParts.push(`水中+${aquaticBonus}`);
+      if (hasWildBark)       defParts.push(`吠叫÷2`);
+
+      const defStr = defParts.length
+        ? `${effDef} (${defParts.join(" ")})`
+        : String(effDef);
+
       lines.push({ label: "ATK", value: String(uStats.atk) });
-      lines.push({ label: "DEF", value: `${uStats.def}${effect.defBonus ? ` +${effect.defBonus}` : ""}` });
+      lines.push({ label: "DEF", value: defStr });
       lines.push({ label: "移動", value: String(uStats.rom) });
       lines.push({ label: "射程", value: String(uStats.rng) });
     }
