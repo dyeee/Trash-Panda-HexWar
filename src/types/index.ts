@@ -30,21 +30,36 @@ export enum UnitType {
   Warrior   = "warrior",
   Archer    = "archer",
   Cavalry   = "cavalry",
-  // ── 特殊角色 ──
+  // ── 特殊角色（舊） ──
   Catfish   = "catfish",    // 垃圾魚
   Snake     = "snake",      // 地頭蛇
   Pigeon    = "pigeon",     // 屎彈鴿
   Cockroach = "cockroach",  // 大強
   Crow      = "crow",       // 烏鴉
+  // ── 特殊角色（新） ──
+  Possum    = "possum",     // 負鼠
+  Rat       = "rat",        // 鼠修女
+  Rooster   = "rooster",    // 畫雞丸
+  Worm      = "worm",       // 垃圾哲學家
+  Chiwawa   = "chiwawa",    // 看門狗
+  Cat       = "cat",        // 咪咪
+  Frog      = "frog",       // 流浪蛙
 }
 
 /** 特殊能力標記 */
 export enum SpecialAbility {
   Aquatic     = "aquatic",     // 水中單位
-  Aerial      = "aerial",      // 空中單位：無視地形/穿越敵軍
+  Aerial      = "aerial",      // 空中單位
   Intimidate  = "intimidate",  // 威嚇：週邊敵方不得攻擊
-  Immortal    = "immortal",    // 不死小強：80% 機率 miss
-  Collector   = "collector",   // 搜集癖：每回合結束 +1 分
+  Immortal    = "immortal",    // 不死小強：80% miss
+  Collector   = "collector",   // 搜集癖：每回合結束 +1
+  // ── 新能力 ──
+  Pickpocket  = "pickpocket",  // 摸金：回合結束，週邊有敵 +1/-1
+  Blessing    = "blessing",    // 鼠修女：週邊友方 DEF+2
+  NoAbility   = "none",        // 無特殊（畫雞丸）
+  TownBonus   = "townbonus",   // 城鎮哲學：在城鎮回合結束額外+2（兩次）
+  WildBark    = "wildbark",    // 野性吠叫：週邊敵方 DEF÷2
+  ToyGun      = "toygun",      // 玩具槍：RNG3 但數值照算
 }
 
 export enum UnitStatus {

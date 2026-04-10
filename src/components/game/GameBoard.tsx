@@ -6,7 +6,8 @@ import { useState, useCallback, useRef } from "react";
 import { useGame }   from "@/hooks/useGame";
 import HexCanvas, { HexCanvasHandle } from "@/components/canvas/HexCanvas";
 import { triggerAttackFlash } from "@/lib/game/canvasRenderer";
-import { UnitType, Player, HexCoord, Unit, SpecialAbility, TerrainType } from "@/types";
+import { hexDistance } from "@/lib/utils/hex";
+import { UnitType, Player, HexCoord, Unit, SpecialAbility, TerrainType, UnitStatus } from "@/types";
 import {
   BASE_STATS, UNIT_VISUAL, PLAYER_VISUAL,
   GAME_RULES, TERRAIN_EFFECTS, TERRAIN_VISUAL, SPAWN_ZONES,
@@ -35,12 +36,18 @@ const UNIT_IMG: Record<string, Record<Player, string> | string> = {
   [UnitType.Warrior]:   { [Player.Blue]: "/img/units/blue_warrior.png", [Player.Red]: "/img/units/red_warrior.png" },
   [UnitType.Archer]:    { [Player.Blue]: "/img/units/blue_archer.png",  [Player.Red]: "/img/units/red_archer.png"  },
   [UnitType.Cavalry]:   { [Player.Blue]: "/img/units/blue_knight.png",  [Player.Red]: "/img/units/red_knight.png"  },
-  // 特殊角色：兩方共用同一張圖
   [UnitType.Catfish]:   "/img/specials/catfish.png",
   [UnitType.Snake]:     "/img/specials/snake.png",
   [UnitType.Pigeon]:    "/img/specials/pigeon.png",
   [UnitType.Cockroach]: "/img/specials/cockroach.png",
   [UnitType.Crow]:      "/img/specials/crow.png",
+  [UnitType.Possum]:    "/img/specials/possum.png",
+  [UnitType.Rat]:       "/img/specials/rat.png",
+  [UnitType.Rooster]:   "/img/specials/rooster.png",
+  [UnitType.Worm]:      "/img/specials/worm.png",
+  [UnitType.Chiwawa]:   "/img/specials/chiwawa.png",
+  [UnitType.Cat]:       "/img/specials/cat.png",
+  [UnitType.Frog]:      "/img/specials/frog.png",
 };
 
 function getUnitImg(type: UnitType, owner: Player): string {
@@ -103,20 +110,31 @@ export default function GameBoard({
     const clickedUnit = units.find(u => u.position.q === coord.q && u.position.r === coord.r);
     if (selUnit && clickedUnit && clickedUnit.owner !== selUnit.owner) {
       triggerAttackFlash(selUnit.id);
-      // +1 彈出條件：
-      //   1. 累積傷害（含本次）>= 有效 DEF
-      //   2. 目標不是不死小強（或是但這次不會 miss，無法預知，所以不死小強不預彈）
-      const defTile       = tiles.find(t => t.coord.q === coord.q && t.coord.r === coord.r);
-      const isImmortal    = clickedUnit.specialAbility === SpecialAbility.Immortal;
-      const aquaticBonus  = clickedUnit.specialAbility === SpecialAbility.Aquatic &&
-        defTile?.terrain === TerrainType.Water ? 1 : 0;
-      const defBonus      = defTile ? (TERRAIN_EFFECTS[defTile.terrain]?.defBonus ?? 0) : 0;
-      const effectiveDef  = (BASE_STATS[clickedUnit.type]?.def ?? 0) + defBonus + aquaticBonus;
-      const prevDmg       = state.pendingDamage?.[clickedUnit.id] ?? 0;
-      const totalDmg      = prevDmg + selUnit.currentAtk;
-      // 不死小強：無法預知是否 miss，不提前彈出；其他：累積傷害達閾值才彈
-      if (!isImmortal && totalDmg >= effectiveDef) {
-        setTimeout(() => canvasRef.current?._addPopup?.(GAME_RULES.KILL_SCORE, selUnit.owner, clickedUnit.position), 150);
+      // +1 彈出條件：攻擊者尚未攻擊、不是不死小強、累積傷害達閾值
+      if (!selUnit.hasAttacked) {
+        const defTile      = tiles.find(t => t.coord.q === coord.q && t.coord.r === coord.r);
+        const isImmortal   = clickedUnit.specialAbilities?.includes(SpecialAbility.Immortal) ?? false;
+        const aquaticBonus = (clickedUnit.specialAbilities?.includes(SpecialAbility.Aquatic) && defTile?.terrain === TerrainType.Water) ? 1 : 0;
+        const defBonus     = defTile ? (TERRAIN_EFFECTS[defTile.terrain]?.defBonus ?? 0) : 0;
+        // 鼠修女加成
+        const blessingBonus = units.some(u =>
+          u.owner === clickedUnit.owner && u.id !== clickedUnit.id &&
+          u.specialAbilities?.includes(SpecialAbility.Blessing) &&
+          hexDistance(u.position, clickedUnit.position) <= 1
+        ) ? 2 : 0;
+        // 看門狗減免（÷2 後無條件進位）
+        const hasWildBark = units.some(u =>
+          u.owner !== clickedUnit.owner &&
+          u.specialAbilities?.includes(SpecialAbility.WildBark) &&
+          hexDistance(u.position, clickedUnit.position) <= 1
+        );
+        let effectiveDef = (BASE_STATS[clickedUnit.type]?.def ?? 0) + defBonus + aquaticBonus + blessingBonus;
+        if (hasWildBark) effectiveDef = Math.ceil(effectiveDef / 2);
+        const prevDmg  = state.pendingDamage?.[clickedUnit.id] ?? 0;
+        const totalDmg = prevDmg + selUnit.currentAtk;
+        if (!isImmortal && totalDmg >= effectiveDef) {
+          setTimeout(() => canvasRef.current?._addPopup?.(GAME_RULES.KILL_SCORE, selUnit.owner, clickedUnit.position), 150);
+        }
       }
     }
     handleTileClick(coord);
@@ -129,19 +147,34 @@ export default function GameBoard({
 
   const handleEndTurn = useCallback(() => {
     if (winner) return;
-    // 城鎮 +2 彈出（當前回合方）
+    const cur   = turn.currentPlayer;
+    const enemy = cur === Player.Blue ? Player.Red : Player.Blue;
+
+    // 城鎮 +2 彈出
     tiles.filter(t => t.terrain === "town" && t.occupiedBy).forEach(t => {
       const occ = units.find(u => u.id === t.occupiedBy);
-      if (occ && occ.owner === turn.currentPlayer) {
+      if (occ && occ.owner === cur)
         setTimeout(() => canvasRef.current?._addPopup?.(GAME_RULES.TOWN_SCORE_PER_TURN, occ.owner, t.coord), 100);
-      }
     });
-    // 烏鴉 搜集癖 +1 彈出（當前回合方的烏鴉）
-    units
-      .filter(u => u.owner === turn.currentPlayer && u.specialAbility === SpecialAbility.Collector)
+    // 搜集癖（烏鴉）+1
+    units.filter(u => u.owner === cur && u.specialAbilities.includes(SpecialAbility.Collector))
+      .forEach(u => setTimeout(() => canvasRef.current?._addPopup?.(1, u.owner, u.position), 150));
+    // 垃圾哲學家在城鎮：兩次 +2
+    units.filter(u => u.owner === cur && u.specialAbilities.includes(SpecialAbility.TownBonus))
       .forEach(u => {
-        setTimeout(() => canvasRef.current?._addPopup?.(1, u.owner, u.position), 150);
+        const onTown = tiles.some(t => t.terrain === "town" && t.coord.q === u.position.q && t.coord.r === u.position.r);
+        if (onTown) {
+          setTimeout(() => canvasRef.current?._addPopup?.(2, u.owner, u.position), 200);
+          setTimeout(() => canvasRef.current?._addPopup?.(2, u.owner, u.position), 500);
+        }
       });
+    // 摸金（負鼠）：週邊有敵 → +1
+    units.filter(u => u.owner === cur && u.specialAbilities.includes(SpecialAbility.Pickpocket))
+      .forEach(u => {
+        const hasEnemy = units.some(e => e.owner === enemy && hexDistance(e.position, u.position) <= 1);
+        if (hasEnemy) setTimeout(() => canvasRef.current?._addPopup?.(1, u.owner, u.position), 300);
+      });
+
     endTurn();
     setPendingSummon(null);
     setLog("回合結束，換對手行動");
@@ -314,7 +347,7 @@ export default function GameBoard({
         }}>
 
           {/* 棋子大圖區 — flex:1 填滿剩餘 */}
-          <UnitPortrait unit={selectedUnit} tiles={tiles} />
+          <UnitPortrait unit={selectedUnit} state={state} />
 
           {/* 召喚按鈕 */}
           {isPlaying && (
@@ -405,18 +438,23 @@ function PlayerChip({ name, score, color, active, reverse = false }: {
 
 // ── 角色對白 ─────────────────────────────────────────────────
 const UNIT_QUOTES: Record<string, Record<Player, string[]>> = {
+  // ── 藍隊臭鼬 ──────────────────────────────────────────────
   [UnitType.Warrior]: {
     [Player.Blue]: [
       "別擋路，骨頭很貴的！",
       "靠近一步你試試！",
       "我站這就是為了打架。",
       "有膽就衝過來！",
+      "臭鼬幫不歡迎外人！",
+      "這條垃圾場我守了三年！",
     ],
     [Player.Red]: [
       "不要搶我的垃圾！",
       "這條街是我的地盤！",
       "你剛才看我什麼眼神？",
       "魚骨頭也是我的！",
+      "浣熊幫天下無敵！",
+      "你知道我今天有多餓嗎？！",
     ],
   },
   [UnitType.Archer]: {
@@ -425,12 +463,16 @@ const UNIT_QUOTES: Record<string, Record<Player, string[]>> = {
       "毒霧範圍很廣，小心點。",
       "射程夠遠，你逃不掉。",
       "嘿嘿，吃我這一罐！",
+      "從這裡噴到那裡，正中目標。",
+      "聞到了嗎？那是我的攻擊。",
     ],
     [Player.Red]: [
       "誰偷了我的魚罐頭！",
       "老子連狙擊都懂！",
       "遠遠地就能幹掉你！",
       "這一罐送你免費的。",
+      "浣熊也會拿槍！吃驚嗎？",
+      "垃圾桶旁邊練出來的準度！",
     ],
   },
   [UnitType.Cavalry]: {
@@ -439,33 +481,235 @@ const UNIT_QUOTES: Record<string, Record<Player, string[]>> = {
       "沒人擋得住我的速度！",
       "全速前進，別廢話！",
       "盔甲戴好了，出發！",
+      "臭鼬騎兵！聽起來就帥！",
+      "快跑！我比你想像的快！",
     ],
     [Player.Red]: [
       "讓開讓開！購物車失控！",
       "斗篷飛起來就是帥！",
       "這速度連警察追不上！",
       "衝進去搶完再說！",
+      "浣熊的腿比你以為的還長！",
+      "嗚嗚嗚！搶了就跑！",
     ],
   },
+  // ── 特殊角色 ──────────────────────────────────────────────
   [UnitType.Catfish]: {
-    [Player.Blue]: ["下水道是我家。","水裡我最硬！","你聞到什麼了嗎？","我吐的是藝術。"],
-    [Player.Red]:  ["這條水溝是我的！","臭？你才臭！","誰敢攔我的水？","水底的事少管閒事。"],
+    [Player.Blue]: [
+      "下水道是我家。",
+      "水裡我最硬！",
+      "你聞到什麼了嗎？",
+      "我吐的是藝術。",
+      "污水？那是我的浴缸。",
+      "沒有我，下水道誰管？",
+    ],
+    [Player.Red]: [
+      "這條水溝是我的！",
+      "臭？你才臭！",
+      "誰敢攔我的水？",
+      "水底的事少管閒事。",
+      "浣熊也愛水！",
+      "嘎！竟然跟我搶水域！",
+    ],
   },
   [UnitType.Snake]: {
-    [Player.Blue]: ["噓……別亂動。","我這一圈，沒人進得來。","你的膽子呢？","怕了吧，慢慢怕。"],
-    [Player.Red]:  ["這塊地我罩的。","你再靠近試試？","嘶……識相就閃開。","沒有我點頭誰都別動。"],
+    [Player.Blue]: [
+      "噓……別亂動。",
+      "我這一圈，沒人進得來。",
+      "你的膽子呢？",
+      "怕了吧，慢慢怕。",
+      "靠近我試試，我讓你動彈不得。",
+      "嘶嘶嘶……滾開。",
+    ],
+    [Player.Red]: [
+      "這塊地我罩的。",
+      "你再靠近試試？",
+      "嘶……識相就閃開。",
+      "沒有我點頭誰都別動。",
+      "我盤踞在此，你要怎樣？",
+      "想過來？先看我臉色。",
+    ],
   },
   [UnitType.Pigeon]: {
-    [Player.Blue]: ["從天而降！","看我投彈！","哦哦哦～～～","飛得高打得準！"],
-    [Player.Red]:  ["哈哈哈俯衝攻擊！","地形？什麼地形？","誰都擋不住我！","轟炸開始！"],
+    [Player.Blue]: [
+      "從天而降！",
+      "看我投彈！",
+      "哦哦哦～～～",
+      "飛得高打得準！",
+      "地形？從空中看都一樣！",
+      "呱！（這是鴿子的聲音嗎？）",
+    ],
+    [Player.Red]: [
+      "哈哈哈俯衝攻擊！",
+      "地形？什麼地形？",
+      "誰都擋不住我！",
+      "轟炸開始！",
+      "垃圾場的制空權是我的！",
+      "翱翔在垃圾堆上方，真爽！",
+    ],
   },
   [UnitType.Cockroach]: {
-    [Player.Blue]: ["打不死我的！","哈！又躲過了！","我已經死過一百次了。","核爆都沒用！"],
-    [Player.Red]:  ["嘿嘿沒打到！","我永遠不會死！","再來！再來！","你打得到算我輸！"],
+    [Player.Blue]: [
+      "打不死我的！",
+      "哈！又躲過了！",
+      "我已經死過一百次了。",
+      "核爆都沒用！",
+      "你的攻擊？不好意思，沒感覺。",
+      "強哥從來不認輸！",
+    ],
+    [Player.Red]: [
+      "嘿嘿沒打到！",
+      "我永遠不會死！",
+      "再來！再來！",
+      "你打得到算我輸！",
+      "浣熊幫的不死先鋒！",
+      "我存在了三億年，怕你？",
+    ],
   },
   [UnitType.Crow]: {
-    [Player.Blue]: ["閃亮的東西都是我的。","又多了一枚金幣。","財富就是力量！","哈哈哈哈哈！"],
-    [Player.Red]:  ["拿到啦！","這個也要！那個也要！","再給我一枚！","Bling bling！"],
+    [Player.Blue]: [
+      "閃亮的東西都是我的。",
+      "又多了一枚金幣。",
+      "財富就是力量！",
+      "哈哈哈哈哈！",
+      "從天而降再撿一枚！",
+      "哥飛得高，看得遠，賺得多。",
+    ],
+    [Player.Red]: [
+      "拿到啦！",
+      "這個也要！那個也要！",
+      "再給我一枚！",
+      "Bling bling！",
+      "勉強施捨你一枚！",
+      "每回合都是收穫！",
+    ],
+  },
+  [UnitType.Possum]: {
+    [Player.Blue]: [
+      "到手！到手！",
+      "你的錢是我的錢。",
+      "看到敵人就知道——到手。",
+      "我只是借過來而已。",
+      "靠近我就是給我送錢！",
+      "摸！金！到！手！",
+    ],
+    [Player.Red]: [
+      "借錢要還，誰還要借？！",
+      "嘿嘿，順走了。",
+      "你再靠近，我就再拿一次。",
+      "摸了就走，溜了。",
+      "浣熊幫的財務大臣！",
+      "鄰居嘛，借個一分不過分吧？",
+    ],
+  },
+  [UnitType.Rat]: {
+    [Player.Blue]: [
+      "願主保佑你……的DEF。",
+      "阿門，臭臭們加油！",
+      "我用禱告守護你。",
+      "上帝說：+2 DEF。",
+      "在垃圾堆裡也要有信仰！",
+      "祝福！防禦力上升！",
+    ],
+    [Player.Red]: [
+      "讓我為你祈禱。",
+      "信仰使我們強大！",
+      "願主保護我們。",
+      "阿門阿門阿門！",
+      "浣熊幫也有神職人員的！",
+      "打架前先禱告，這很重要。",
+    ],
+  },
+  [UnitType.Rooster]: {
+    [Player.Blue]: [
+      "還有人敢上嗎？",
+      "屁股大了不起？",
+      "就這點ATK？",
+      "哥只是來散步的。",
+      "ATK7！我只是不想動！",
+      "你看我眼神就知道快跑。",
+    ],
+    [Player.Red]: [
+      "我就站這，怎樣？",
+      "來打我啊！",
+      "ATK7 DEF7，你呢？",
+      "沒廢話，開幹。",
+      "浣熊幫最強打手！",
+      "我一個頂你三個！",
+    ],
+  },
+  [UnitType.Worm]: {
+    [Player.Blue]: [
+      "世界是垃圾……但城鎮是我的。",
+      "哲學嘛，就是垃圾堆中的黃金。",
+      "存在即是收費。",
+      "這塊地，我罩。",
+      "我的ATK是0，但我的智慧無限。",
+      "哲學家從不出手，只等收益。",
+    ],
+    [Player.Red]: [
+      "The world is trash，但分數不是。",
+      "待在城鎮什麼都不用做。",
+      "哲♂學",
+      "哲學家的智慧：佔地。",
+      "浣熊幫的精神領袖。",
+      "我連攻擊都懶，但我最賺。",
+    ],
+  },
+  [UnitType.Chiwawa]: {
+    [Player.Blue]: [
+      "汪汪汪！！！！",
+      "你敢靠近？！",
+      "嗯？！！嗯？！！",
+      "吠爆你！",
+      "我小我兇！防禦減半！",
+      "汪汪汪汪汪汪汪！！",
+    ],
+    [Player.Red]: [
+      "靠過來試試！",
+      "汪！汪！汪汪汪！",
+      "破防了嗎？嘿！",
+      "我很小但我很兇！",
+      "浣熊幫的噪音武器！",
+      "你的盾牌？被我吠碎了！",
+    ],
+  },
+  [UnitType.Cat]: {
+    [Player.Blue]: [
+      "噠噠噠噠——",
+      "射程三格，怕了嗎？",
+      "你在哪？我看得見！",
+      "嗖——中了！",
+      "瘦不代表弱！看這準度！",
+      "我的食物，我用槍保護！",
+    ],
+    [Player.Red]: [
+      "這是我的！誰搶我打誰！",
+      "噠！噠！噠！噠！",
+      "遠遠地保護我的垃圾！",
+      "只是BB彈，但很爽！",
+      "浣熊幫最遠的射手！",
+    ],
+  },
+
+  [UnitType.Frog]: {
+    [Player.Blue]: [
+      "聽說這裡有吃的……",
+      "垃圾堆？跟平常吃的沒兩樣。",
+      "塊逃～！",
+      "我只是路過的，順便幫個忙。",
+      "水裡水外都能混的蛙！",
+      "HELP！ 我只是來領便當的...",
+    ],
+    [Player.Red]: [
+      "呱——算了，打就打。",
+      "呱！沒想到是這種垃圾堆。",
+      "既然都來了就幫浣熊幫吧。",
+      "流浪蛙不挑食，打架也不挑。",
+      "便當到了嗎？",
+      "真香！這裡的垃圾堆比我想像的好吃！",
+      ,
+    ],
   },
 };
 
@@ -478,9 +722,9 @@ function getQuote(unit: Unit): string {
 }
 
 // ── UnitPortrait：填滿上半部，hover 顯示角色對白 ─────────────
-function UnitPortrait({ unit, tiles }: {
+function UnitPortrait({ unit, state }: {
   unit: Unit | null;
-  tiles: ReturnType<typeof useGame>["state"]["tiles"];
+  state: ReturnType<typeof useGame>["state"];
 }) {
   const [hovering, setHovering] = useState(false);
 
@@ -499,10 +743,43 @@ function UnitPortrait({ unit, tiles }: {
     );
   }
 
-  const imgSrc = getUnitImg(unit.type, unit.owner);
-  const pColor = unit.owner === Player.Blue ? C.blue : C.red;
-  const done   = unit.hasMoved && unit.hasAttacked;
-  const quote  = getQuote(unit);
+  const imgSrc  = getUnitImg(unit.type, unit.owner);
+  const pColor  = unit.owner === Player.Blue ? C.blue : C.red;
+  const done    = unit.hasMoved && unit.hasAttacked;
+  const quote   = getQuote(unit);
+
+  // 精確計算「可否行動」：移動 or 攻擊任一可做就算可動
+  const canMove = !unit.hasMoved && !state.turn.attackPhaseStarted && unit.status !== UnitStatus.Summoned;
+  const myTile  = state.tiles.find(t => t.coord.q === unit.position.q && t.coord.r === unit.position.r);
+
+  // 攻擊能力判斷
+  let canAttack = !unit.hasAttacked;
+  if (canAttack) {
+    // 被威嚇
+    const intimidated = state.units.some(u =>
+      u.owner !== unit.owner &&
+      u.specialAbilities?.includes(SpecialAbility.Intimidate) &&
+      hexDistance(u.position, unit.position) <= 1
+    );
+    if (intimidated) canAttack = false;
+    // 水域限制（非水中單位 or 陸地水中單位）
+    if (canAttack && myTile) {
+      const isAquatic = unit.specialAbilities?.includes(SpecialAbility.Aquatic);
+      const isAerial  = unit.specialAbilities?.includes(SpecialAbility.Aerial);
+      if (!isAerial) {
+        if (isAquatic && myTile.terrain !== TerrainType.Water) canAttack = false;
+        else if (!isAquatic && myTile.terrain === TerrainType.Water) canAttack = false;
+        // 山區騎兵
+        if (myTile.terrain === TerrainType.Mountain && unit.type === UnitType.Cavalry) canAttack = false;
+      }
+    }
+  }
+
+  const canAct    = canMove || canAttack;
+  const statusStr = done ? "已行動" : canAct ? "可行動" : "不可動";
+  const statusBg  = done ? C.bg     : canAct ? `${C.accent}22`  : `${C.red}22`;
+  const statusCol = done ? C.muted  : canAct ? C.accent          : C.red;
+  const statusBd  = done ? C.border : canAct ? `${C.accent}66`   : `${C.red}66`;
 
   return (
     <div
@@ -539,12 +816,12 @@ function UnitPortrait({ unit, tiles }: {
           position: "absolute", top: 10, left: 10,
           fontSize: "0.66rem", fontWeight: 700,
           padding: "2px 10px", borderRadius: 999,
-          background: done ? C.bg : `${C.accent}22`,
-          color: done ? C.muted : C.accent,
-          border: `1px solid ${done ? C.border : C.accent}66`,
+          background: statusBg,
+          color: statusCol,
+          border: `1px solid ${statusBd}`,
           zIndex: 2,
         }}>
-          {done ? "已行動" : "可行動"}
+          {statusStr}
         </div>
 
         {/* 玩家方 badge */}
@@ -635,18 +912,30 @@ function UnitPortrait({ unit, tiles }: {
             {/* 特殊技能備注（僅特殊角色顯示，列出所有能力） */}
             {unit.specialAbilities.length > 0 && (() => {
               const abilityColor: Record<string, string> = {
-                [SpecialAbility.Aquatic]:   "#3b82f6",
-                [SpecialAbility.Aerial]:    "#8b5cf6",
-                [SpecialAbility.Intimidate]:"#ef4444",
-                [SpecialAbility.Immortal]:  "#f59e0b",
-                [SpecialAbility.Collector]: "#eab308",
+                [SpecialAbility.Aquatic]:    "#3b82f6",
+                [SpecialAbility.Aerial]:     "#8b5cf6",
+                [SpecialAbility.Intimidate]: "#ef4444",
+                [SpecialAbility.Immortal]:   "#f59e0b",
+                [SpecialAbility.Collector]:  "#eab308",
+                [SpecialAbility.Pickpocket]: "#10b981",
+                [SpecialAbility.Blessing]:   "#f0abfc",
+                [SpecialAbility.NoAbility]:  "#6b7280",
+                [SpecialAbility.TownBonus]:  "#a78bfa",
+                [SpecialAbility.WildBark]:   "#fb923c",
+                [SpecialAbility.ToyGun]:     "#60a5fa",
               };
               const abilityIcon: Record<string, string> = {
-                [SpecialAbility.Aquatic]:   "💧",
-                [SpecialAbility.Aerial]:    "🕊",
-                [SpecialAbility.Intimidate]:"⚠️",
-                [SpecialAbility.Immortal]:  "💀",
-                [SpecialAbility.Collector]: "🪙",
+                [SpecialAbility.Aquatic]:    "💧",
+                [SpecialAbility.Aerial]:     "🕊",
+                [SpecialAbility.Intimidate]: "⚠️",
+                [SpecialAbility.Immortal]:   "💀",
+                [SpecialAbility.Collector]:  "🪙",
+                [SpecialAbility.Pickpocket]: "🤏",
+                [SpecialAbility.Blessing]:   "✝️",
+                [SpecialAbility.NoAbility]:  "💪",
+                [SpecialAbility.TownBonus]:  "🗑",
+                [SpecialAbility.WildBark]:   "🐕",
+                [SpecialAbility.ToyGun]:     "🔫",
               };
               return unit.specialAbilities.map(ability => {
                 const col = abilityColor[ability] ?? C.accent;

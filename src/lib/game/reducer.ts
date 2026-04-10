@@ -155,7 +155,24 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
       const aquaticBonus =
         defender.specialAbilities.includes(SpecialAbility.Aquatic) &&
         defenderTile.terrain === TerrainType.Water ? 1 : 0;
-      const effectiveDef = getEffectiveDef(defender, defenderTile.terrain) + aquaticBonus;
+
+      // 鼠修女 Blessing：週邊1格友方（同陣營）有修女 → 防禦方 DEF+2
+      const blessingBonus = state.units.some(u =>
+        u.owner === defender.owner &&
+        u.id !== defender.id &&
+        u.specialAbilities.includes(SpecialAbility.Blessing) &&
+        hexDistance(u.position, defender.position) <= 1
+      ) ? 2 : 0;
+
+      // 看門狗 WildBark：防禦方週邊1格有敵方看門狗 → DEF÷2（無條件進位）
+      const hasWildBark = state.units.some(u =>
+        u.owner !== defender.owner &&
+        u.specialAbilities.includes(SpecialAbility.WildBark) &&
+        hexDistance(u.position, defender.position) <= 1
+      );
+
+      let effectiveDef = getEffectiveDef(defender, defenderTile.terrain) + aquaticBonus + blessingBonus;
+      if (hasWildBark) effectiveDef = Math.ceil(effectiveDef / 2);
 
       const prevDmg     = state.pendingDamage[targetId] ?? 0;
       const newDmg      = prevDmg + attacker.currentAtk;
@@ -192,6 +209,8 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
     // ── 結束回合 ─────────────────────────────────────────────
     case "END_TURN": {
       const next = state.turn.currentPlayer === Player.Blue ? Player.Red : Player.Blue;
+      const cur  = state.turn.currentPlayer;
+      const enemy = next;
 
       const townScore = { ...state.scores };
 
@@ -200,15 +219,40 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         .filter(t => t.terrain === "town" && t.occupiedBy)
         .forEach(t => {
           const unit = state.units.find(u => u.id === t.occupiedBy);
-          if (unit && unit.owner === state.turn.currentPlayer) {
+          if (unit && unit.owner === cur) {
             townScore[unit.owner] += GAME_RULES.TOWN_SCORE_PER_TURN;
           }
         });
 
-      // 烏鴉：搜集癖 +1（當前行動方的烏鴉）
+      // 搜集癖（烏鴉）+1
       state.units
-        .filter(u => u.owner === state.turn.currentPlayer && u.specialAbilities.includes(SpecialAbility.Collector))
-        .forEach(u => { townScore[u.owner] += 1; });
+        .filter(u => u.owner === cur && u.specialAbilities.includes(SpecialAbility.Collector))
+        .forEach(() => { townScore[cur] += 1; });
+
+      // 垃圾哲學家：在城鎮時額外 +2（兩次）
+      state.units
+        .filter(u => u.owner === cur && u.specialAbilities.includes(SpecialAbility.TownBonus))
+        .forEach(u => {
+          const onTown = state.tiles.some(
+            t => t.terrain === "town" && t.coord.q === u.position.q && t.coord.r === u.position.r
+          );
+          if (onTown) {
+            townScore[cur] += 2; // 兩次 +2 = +4，前端會觸發兩次彈出
+          }
+        });
+
+      // 摸金（負鼠）：週邊1格有敵 → +1 己，-1 敵
+      state.units
+        .filter(u => u.owner === cur && u.specialAbilities.includes(SpecialAbility.Pickpocket))
+        .forEach(u => {
+          const hasNearbyEnemy = state.units.some(
+            e => e.owner === enemy && hexDistance(e.position, u.position) <= 1
+          );
+          if (hasNearbyEnemy) {
+            townScore[cur]   += 1;
+            townScore[enemy]  = Math.max(0, townScore[enemy] - 1);
+          }
+        });
 
       const winner     = checkWinner(townScore, state.units);
       const freshUnits = resetUnitsForNewTurn(state.units);

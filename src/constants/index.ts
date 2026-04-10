@@ -114,47 +114,75 @@ export const BASE_STATS: Record<UnitType, UnitStats> = {
   [UnitType.Warrior]:   { atk: 3, def: 4, rom: 2, rng: 1, maxCount: 6, summonCost: 2 },
   [UnitType.Archer]:    { atk: 4, def: 2, rom: 2, rng: 2, maxCount: 4, summonCost: 3 },
   [UnitType.Cavalry]:   { atk: 4, def: 3, rom: 3, rng: 1, maxCount: 2, summonCost: 3 },
-  // 特殊角色（每局各抽 1 隻，每隻最多 1 隻，費用 5）
+  // 特殊角色（第一批）
   [UnitType.Catfish]:   { atk: 4, def: 5, rom: 2, rng: 2, maxCount: 1, summonCost: 5,
                           specialAbility: SpecialAbility.Aquatic,
-                          specialAbilities: [SpecialAbility.Aquatic],
-                          isSpecial: true },
+                          specialAbilities: [SpecialAbility.Aquatic], isSpecial: true },
   [UnitType.Snake]:     { atk: 4, def: 4, rom: 2, rng: 1, maxCount: 1, summonCost: 5,
                           specialAbility: SpecialAbility.Intimidate,
-                          specialAbilities: [SpecialAbility.Intimidate],
-                          isSpecial: true },
+                          specialAbilities: [SpecialAbility.Intimidate], isSpecial: true },
   [UnitType.Pigeon]:    { atk: 4, def: 5, rom: 4, rng: 1, maxCount: 1, summonCost: 5,
                           specialAbility: SpecialAbility.Aerial,
-                          specialAbilities: [SpecialAbility.Aerial],
-                          isSpecial: true },
+                          specialAbilities: [SpecialAbility.Aerial], isSpecial: true },
   [UnitType.Cockroach]: { atk: 3, def: 1, rom: 2, rng: 1, maxCount: 1, summonCost: 5,
                           specialAbility: SpecialAbility.Immortal,
-                          specialAbilities: [SpecialAbility.Immortal],
-                          isSpecial: true },
+                          specialAbilities: [SpecialAbility.Immortal], isSpecial: true },
   [UnitType.Crow]:      { atk: 4, def: 5, rom: 2, rng: 1, maxCount: 1, summonCost: 5,
                           specialAbility: SpecialAbility.Collector,
-                          specialAbilities: [SpecialAbility.Aerial, SpecialAbility.Collector],
-                          isSpecial: true },
+                          specialAbilities: [SpecialAbility.Aerial, SpecialAbility.Collector], isSpecial: true },
+  // 特殊角色（第二批）
+  [UnitType.Possum]:    { atk: 4, def: 5, rom: 2, rng: 1, maxCount: 1, summonCost: 5,
+                          specialAbility: SpecialAbility.Pickpocket,
+                          specialAbilities: [SpecialAbility.Pickpocket], isSpecial: true },
+  [UnitType.Rat]:       { atk: 4, def: 5, rom: 2, rng: 1, maxCount: 1, summonCost: 5,
+                          specialAbility: SpecialAbility.Blessing,
+                          specialAbilities: [SpecialAbility.Blessing], isSpecial: true },
+  [UnitType.Rooster]:   { atk: 7, def: 7, rom: 2, rng: 1, maxCount: 1, summonCost: 5,
+                          specialAbility: SpecialAbility.NoAbility,
+                          specialAbilities: [], isSpecial: true },
+  [UnitType.Worm]:      { atk: 0, def: 3, rom: 2, rng: 1, maxCount: 1, summonCost: 5,
+                          specialAbility: SpecialAbility.TownBonus,
+                          specialAbilities: [SpecialAbility.TownBonus], isSpecial: true },
+  [UnitType.Chiwawa]:   { atk: 3, def: 4, rom: 2, rng: 1, maxCount: 1, summonCost: 5,
+                          specialAbility: SpecialAbility.WildBark,
+                          specialAbilities: [SpecialAbility.WildBark], isSpecial: true },
+  [UnitType.Cat]:       { atk: 3, def: 5, rom: 2, rng: 3, maxCount: 1, summonCost: 5,
+                          specialAbility: SpecialAbility.ToyGun,
+                          specialAbilities: [SpecialAbility.ToyGun], isSpecial: true },
+  // 流浪蛙：費用1，水中單位，特殊角色
+  [UnitType.Frog]:      { atk: 1, def: 2, rom: 2, rng: 1, maxCount: 10, summonCost: 1,
+                          specialAbility: SpecialAbility.Aquatic,
+                          specialAbilities: [SpecialAbility.Aquatic], isSpecial: true },
 };
 
 export const UNIT_VISUAL: Record<UnitType, { label: string; symbol: string; color: string; img?: string }> = {
-  [UnitType.Warrior]:   { label: "戰士",    symbol: "△", color: "#4A90D9" },
-  [UnitType.Archer]:    { label: "弓手",    symbol: "✕", color: "#9B59B6" },
-  [UnitType.Cavalry]:   { label: "騎兵",    symbol: "✦", color: "#E67E22" },
-  [UnitType.Catfish]:   { label: "垃圾魚",  symbol: "魚", color: "#5B9E8A", img: "/img/specials/catfish.png" },
-  [UnitType.Snake]:     { label: "地頭蛇",  symbol: "蛇", color: "#7DB83A", img: "/img/specials/snake.png" },
-  [UnitType.Pigeon]:    { label: "屎彈鴿",  symbol: "鴿", color: "#9B8ED4", img: "/img/specials/pigeon.png" },
-  [UnitType.Cockroach]: { label: "大強",    symbol: "強", color: "#A0724A", img: "/img/specials/cockroach.png" },
-  [UnitType.Crow]:      { label: "烏鴉",    symbol: "鴉", color: "#7A7A8C", img: "/img/specials/crow.png" },
+  [UnitType.Warrior]:   { label: "戰士",       symbol: "△", color: "#4A90D9" },
+  [UnitType.Archer]:    { label: "弓手",       symbol: "✕", color: "#9B59B6" },
+  [UnitType.Cavalry]:   { label: "騎兵",       symbol: "✦", color: "#E67E22" },
+  [UnitType.Catfish]:   { label: "垃圾魚",     symbol: "魚", color: "#5B9E8A", img: "/img/specials/catfish.png" },
+  [UnitType.Snake]:     { label: "地頭蛇",     symbol: "蛇", color: "#7DB83A", img: "/img/specials/snake.png" },
+  [UnitType.Pigeon]:    { label: "屎彈鴿",     symbol: "鴿", color: "#9B8ED4", img: "/img/specials/pigeon.png" },
+  [UnitType.Cockroach]: { label: "大強",       symbol: "強", color: "#A0724A", img: "/img/specials/cockroach.png" },
+  [UnitType.Crow]:      { label: "烏鴉",       symbol: "鴉", color: "#7A7A8C", img: "/img/specials/crow.png" },
+  [UnitType.Possum]:    { label: "負鼠",       symbol: "鼠", color: "#8A7EA0", img: "/img/specials/possum.png" },
+  [UnitType.Rat]:       { label: "鼠修女",     symbol: "修", color: "#C8A96E", img: "/img/specials/rat.png" },
+  [UnitType.Rooster]:   { label: "畫雞丸",     symbol: "雞", color: "#E8E0C0", img: "/img/specials/rooster.png" },
+  [UnitType.Worm]:      { label: "垃圾哲學家", symbol: "哲", color: "#C4956A", img: "/img/specials/worm.png" },
+  [UnitType.Chiwawa]:   { label: "看門狗",     symbol: "狗", color: "#D4A44C", img: "/img/specials/chiwawa.png" },
+  [UnitType.Cat]:       { label: "瘦橘貓",       symbol: "貓", color: "#E87C3E", img: "/img/specials/cat.png" },
+  [UnitType.Frog]:      { label: "流浪蛙",         symbol: "蛙", color: "#7CB87C", img: "/img/specials/frog.png" },
 };
 
 /** 全部特殊角色 pool */
 export const ALL_SPECIALS: UnitType[] = [
-  UnitType.Catfish, UnitType.Snake, UnitType.Pigeon,
+  UnitType.Catfish, UnitType.Snake,   UnitType.Pigeon,
   UnitType.Cockroach, UnitType.Crow,
+  UnitType.Possum,  UnitType.Rat,     UnitType.Rooster,
+  UnitType.Worm,    UnitType.Chiwawa, UnitType.Cat,
+  UnitType.Frog,
 ];
 
-/** 各方各自從 pool 隨機抽 2 隻特殊角色（兩方可以相同） */
+/** 各方各自從 pool 隨機抽 2 隻特殊角色 */
 export function drawSpecials(): Record<string, UnitType[]> {
   const draw2 = (): UnitType[] => {
     const pool = [...ALL_SPECIALS];
@@ -164,10 +192,7 @@ export function drawSpecials(): Record<string, UnitType[]> {
     }
     return pool.slice(0, 2);
   };
-  return {
-    [Player.Blue]: draw2(),
-    [Player.Red]:  draw2(),
-  };
+  return { [Player.Blue]: draw2(), [Player.Red]: draw2() };
 }
 
 export const SPECIAL_ABILITY_DESC: Record<SpecialAbility, string> = {
@@ -176,6 +201,12 @@ export const SPECIAL_ABILITY_DESC: Record<SpecialAbility, string> = {
   [SpecialAbility.Aerial]:     "空中單位：無視地形、可穿越敵軍",
   [SpecialAbility.Immortal]:   "不死小強：受到攻擊時有 80% 機率 Miss",
   [SpecialAbility.Collector]:  "搜集癖：每回合結束 +1 分",
+  [SpecialAbility.Pickpocket]: "摸金：我方回合結束時，週邊1格內有敵方 → +1分，對方-1分",
+  [SpecialAbility.Blessing]:   "鼠修女：週邊1格內友方 DEF+2（不含自己）",
+  [SpecialAbility.NoAbility]:  "無特殊能力（純靠數值）",
+  [SpecialAbility.TownBonus]:  "垃圾哲學家：在城鎮時，我方回合結束額外賺 2 分（顯示兩次+2）",
+  [SpecialAbility.WildBark]:   "野性吠叫：週邊1格內敵方 DEF÷2（無條件進位）",
+  [SpecialAbility.ToyGun]:     "護食：牠鍛鍊自己射得又遠又準，射程3格",
 };
 
 /** 取得一個兵種所有能力的說明（多能力用 / 分隔） */
