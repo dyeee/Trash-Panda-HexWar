@@ -471,7 +471,7 @@ const UNIT_QUOTES: Record<string, Record<Player, string[]>> = {
       "老子連狙擊都懂！",
       "遠遠地就能幹掉你！",
       "這一罐送你免費的。",
-      "浣熊也會拿槍！吃驚嗎？",
+      "垃圾堆也能撿到槍！吃驚嗎？",
       "垃圾桶旁邊練出來的準度！",
     ],
   },
@@ -691,7 +691,6 @@ const UNIT_QUOTES: Record<string, Record<Player, string[]>> = {
       "浣熊幫最遠的射手！",
     ],
   },
-
   [UnitType.Frog]: {
     [Player.Blue]: [
       "聽說這裡有吃的……",
@@ -708,7 +707,6 @@ const UNIT_QUOTES: Record<string, Record<Player, string[]>> = {
       "流浪蛙不挑食，打架也不挑。",
       "便當到了嗎？",
       "真香！這裡的垃圾堆比我想像的好吃！",
-      ,
     ],
   },
 };
