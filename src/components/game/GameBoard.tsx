@@ -75,6 +75,7 @@ export default function GameBoard({
   const [log, setLog]   = useState("選擇兵種後點擊格子召喚，或點擊己方兵種移動 / 攻擊");
   const [isMobile, setIsMobile] = useState(false);
   const [panelOpen, setPanelOpen] = useState(false);
+  const [mobileInfoUnit, setMobileInfoUnit] = useState<Unit | null>(null);
 
   useEffect(() => {
     const check = () => setIsMobile(window.innerWidth < 768);
@@ -288,8 +289,15 @@ export default function GameBoard({
 
         {/* Canvas — 佔大部分空間 */}
         <div style={{ flex: 1, position: "relative", overflow: "hidden", background: "#243028" }}>
-          <HexCanvas ref={canvasRef} state={state} highlights={allHighlights} onTileClick={handleCanvasClick} />
+          <HexCanvas ref={canvasRef} state={state} highlights={allHighlights}
+            onTileClick={handleCanvasClick}
+            onUnitInfo={u => setMobileInfoUnit(u)} />
           <TerrainLegend />
+
+          {/* 手機單位資訊卡：左下角浮動，不擋地圖 */}
+          {mobileInfoUnit && (
+            <MobileUnitCard unit={mobileInfoUnit} state={state} onClose={() => setMobileInfoUnit(null)} />
+          )}
 
           {/* 開局遮罩 */}
           {isSetup && (
@@ -896,6 +904,117 @@ function getQuote(unit: Unit): string {
   // 用 unit.id 做確定性選擇，同一棋子每次顯示同一句
   const idx = unit.id.charCodeAt(unit.id.length - 1) % pool.length;
   return pool[idx];
+}
+
+// ── MobileUnitCard：手機版點選單位後顯示的資訊卡 ─────────────
+function MobileUnitCard({ unit, state, onClose }: {
+  unit: Unit;
+  state: ReturnType<typeof useGame>["state"];
+  onClose: () => void;
+}) {
+  const pColor  = unit.owner === Player.Blue ? C.blue : C.red;
+  const vis     = UNIT_VISUAL[unit.type];
+  const stats   = BASE_STATS[unit.type];
+  const myTile  = state.tiles.find(t => t.coord.q === unit.position.q && t.coord.r === unit.position.r);
+  const terrain = myTile ? TERRAIN_EFFECTS[myTile.terrain] : null;
+
+  // 動態 DEF
+  const terrainDef = terrain?.defBonus ?? 0;
+  const aquaticBonus = unit.specialAbilities.includes(SpecialAbility.Aquatic) && myTile?.terrain === TerrainType.Water ? 1 : 0;
+  const blessingBonus = state.units.some(u =>
+    u.owner === unit.owner && u.id !== unit.id &&
+    u.specialAbilities.includes(SpecialAbility.Blessing) &&
+    hexDistance(u.position, unit.position) <= 1
+  ) ? 2 : 0;
+  const hasWildBark = state.units.some(u =>
+    u.owner !== unit.owner &&
+    u.specialAbilities.includes(SpecialAbility.WildBark) &&
+    hexDistance(u.position, unit.position) <= 1
+  );
+  let effDef = stats.def + terrainDef + aquaticBonus + blessingBonus;
+  if (hasWildBark) effDef = Math.ceil(effDef / 2);
+
+  const abilityIcon: Record<string, string> = {
+    [SpecialAbility.Aquatic]:    "💧",
+    [SpecialAbility.Aerial]:     "🕊",
+    [SpecialAbility.Intimidate]: "⚠️",
+    [SpecialAbility.Immortal]:   "💀",
+    [SpecialAbility.Collector]:  "🪙",
+    [SpecialAbility.Pickpocket]: "🤏",
+    [SpecialAbility.Blessing]:   "✝️",
+    [SpecialAbility.NoAbility]:  "💪",
+    [SpecialAbility.TownBonus]:  "🗑",
+    [SpecialAbility.WildBark]:   "🐕",
+    [SpecialAbility.ToyGun]:     "🔫",
+  };
+
+  return (
+    <div style={{
+      position: "absolute", bottom: 80, left: 10, zIndex: 30,
+      background: `${C.panel}F2`,
+      backdropFilter: "blur(10px)",
+      border: `1.5px solid ${pColor}66`,
+      borderRadius: 14,
+      padding: "10px 12px",
+      minWidth: 200, maxWidth: 240,
+      boxShadow: `0 4px 24px rgba(0,0,0,0.5), 0 0 0 1px ${pColor}22`,
+      pointerEvents: "auto",
+    }}>
+      {/* 標題列 */}
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+        {vis.img && (
+          <img src={vis.img} alt={vis.label}
+            style={{ width: 36, height: 36, objectFit: "contain", flexShrink: 0,
+              filter: `drop-shadow(0 2px 6px ${vis.color}99)` }} />
+        )}
+        <div style={{ flex: 1 }}>
+          <div style={{ fontWeight: 800, fontSize: "0.88rem", color: pColor }}>{vis.label}</div>
+          <div style={{ fontSize: "0.65rem", color: C.muted }}>
+            {unit.owner === Player.Blue ? "藍方" : "紅方"}
+          </div>
+        </div>
+        <button onClick={onClose} style={{
+          background: "none", border: "none", color: C.muted,
+          fontSize: "1rem", cursor: "pointer", padding: "2px 4px",
+          lineHeight: 1, fontFamily: "inherit",
+        }}>✕</button>
+      </div>
+
+      {/* 數值格 */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 4, marginBottom: 8 }}>
+        {[
+          { k: "ATK", v: stats.atk },
+          { k: "DEF", v: effDef, note: effDef !== stats.def ? `(${stats.def})` : undefined },
+          { k: "ROM", v: stats.rom },
+          { k: "RNG", v: stats.rng },
+        ].map(({ k, v, note }) => (
+          <div key={k} style={{
+            background: C.bg, borderRadius: 8, padding: "5px 4px",
+            textAlign: "center", border: `1px solid ${C.border}`,
+          }}>
+            <div style={{ fontSize: "0.58rem", color: C.muted }}>{k}</div>
+            <div style={{ fontWeight: 900, fontSize: "0.95rem", color: C.accent, lineHeight: 1.1 }}>{v}</div>
+            {note && <div style={{ fontSize: "0.5rem", color: C.muted }}>{note}</div>}
+          </div>
+        ))}
+      </div>
+
+      {/* 特殊能力 */}
+      {unit.specialAbilities.length > 0 && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+          {unit.specialAbilities.map(ability => (
+            <div key={ability} style={{
+              fontSize: "0.65rem", color: C.muted, lineHeight: 1.3,
+              display: "flex", gap: 4, alignItems: "flex-start",
+            }}>
+              <span style={{ flexShrink: 0 }}>{abilityIcon[ability] ?? "✦"}</span>
+              <span>{SPECIAL_ABILITY_DESC[ability]}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
 }
 
 // ── UnitPortrait：填滿上半部，hover 顯示角色對白 ─────────────

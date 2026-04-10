@@ -13,6 +13,7 @@ interface HexCanvasProps {
   state: GameState;
   highlights: HexCoord[];
   onTileClick: (coord: HexCoord) => void;
+  onUnitInfo?: (unit: import("@/types").Unit | null) => void;  // 手機版：點到單位時通知
   config?: Partial<Omit<CanvasConfig, "offsetX" | "offsetY">>;
   className?: string;
 }
@@ -32,7 +33,7 @@ interface TooltipState {
 type CursorMode = "default" | "pointer" | "move" | "crosshair";
 
 const HexCanvas = forwardRef<HexCanvasHandle, HexCanvasProps>(function HexCanvas(
-  { state, highlights, onTileClick, config: configOverride, className },
+  { state, highlights, onTileClick, onUnitInfo, config: configOverride, className },
   ref,
 ) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -43,14 +44,25 @@ const HexCanvas = forwardRef<HexCanvasHandle, HexCanvasProps>(function HexCanvas
   const [cursor,  setCursor]  = useState<CursorMode>("default");
   const [popups,  setPopups]  = useState<ScorePopup[]>([]);
 
-  const hexSize = configOverride?.hexSize ?? DEFAULT_CANVAS_CONFIG.hexSize;
+  // flat-top 地圖實際像素範圍（size=1 時）：
+  //   X span = 9.0  → 加上左右各1格邊距 = 11
+  //   Y span = 7.794 → 加上上下各 √3/2 邊距 ≈ 9.528
+  // hexSize = min(w / 11, h / 9.53)，並留 10% margin
+  const hexSize = useMemo(() => {
+    const w = size.w;
+    const h = size.h;
+    const byW = (w * 0.92) / 11;
+    const byH = (h * 0.92) / 9.53;
+    return Math.max(24, Math.min(80, Math.min(byW, byH)));
+  }, [size]);
+
   const config  = useMemo<CanvasConfig>(() => ({
     ...DEFAULT_CANVAS_CONFIG,
     ...configOverride,
     hexSize,
     offsetX: sizeRef.current.w / 2,
     offsetY: sizeRef.current.h / 2,
-  }), [hexSize, size]);
+  }), [hexSize, size, configOverride]);
 
   // ── PNG 預載 ────────────────────────────────────────────
   useEffect(() => {
@@ -126,6 +138,28 @@ const HexCanvas = forwardRef<HexCanvasHandle, HexCanvasProps>(function HexCanvas
 
   // 暴露給父元件（forwardRef）
   useImperativeHandle(ref, () => ({ _addPopup: addPopup }), [addPopup]);
+
+  // ── Touch：手機點擊支援 ──────────────────────────────────
+  const handleTouchEnd = useCallback((e: React.TouchEvent<HTMLCanvasElement>) => {
+    e.preventDefault();
+    const canvas = canvasRef.current;
+    if (!canvas || e.changedTouches.length === 0) return;
+    const touch = e.changedTouches[0];
+    const rect  = canvas.getBoundingClientRect();
+    const coord = pixelToHex(
+      touch.clientX - rect.left,
+      touch.clientY - rect.top,
+      config.hexSize, config.offsetX, config.offsetY
+    );
+    const inMap = state.tiles.some(t => t.coord.q === coord.q && t.coord.r === coord.r);
+    if (!inMap) return;
+
+    // 通知父層點了哪個單位（供手機資訊卡顯示）
+    const tappedUnit = state.units.find(u => u.position.q === coord.q && u.position.r === coord.r);
+    onUnitInfo?.(tappedUnit ?? null);
+
+    onTileClick(coord);
+  }, [state.tiles, state.units, config, onTileClick, onUnitInfo]);
 
   // ── 點擊 ────────────────────────────────────────────────
   const handleClick = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
@@ -254,10 +288,11 @@ const HexCanvas = forwardRef<HexCanvasHandle, HexCanvasProps>(function HexCanvas
       <canvas
         ref={canvasRef}
         onClick={handleClick}
+        onTouchEnd={handleTouchEnd}
         onMouseMove={handleMouseMove}
         onMouseLeave={handleMouseLeave}
         className={className}
-        style={{ display: "block", width: "100%", height: "100%", cursor: cursorStyle[cursor] }}
+        style={{ display: "block", width: "100%", height: "100%", cursor: cursorStyle[cursor], touchAction: "none" }}
       />
 
       {/* Tooltip */}
