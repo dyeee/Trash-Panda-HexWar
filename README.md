@@ -1,7 +1,8 @@
 # 🦝 HexWar — 垃圾場爭奪戰
 
 > 浣熊、臭鼬與小夥伴們鬥毆搶垃圾，佔領城鎮裡的垃圾場，壯大幫派勢力，贏得勝利。
-
+* **遊戲網址**: [Trash Panda Hex War](https://trash-panda-hex-war-special12.vercel.app/)
+<img width="2048" height="1110" alt="image" src="https://github.com/user-attachments/assets/f260f2cf-fe63-4ff2-8399-f48850877496" />
 ---
 
 ## 📖 故事大綱
@@ -126,3 +127,12 @@
 - **框架**：Next.js 14 + TypeScript
 - **渲染**：HTML Canvas API
 - **部署**：Netlify
+
+## 📜 權利聲明與授權
+Copyright © 2026 dyeee. All rights reserved.
+程式碼採用 GNU General Public License v3.0 (GPL-3.0) 授權。
+未經 dyeee 書面許可，嚴禁將本專案之美術資源用於任何商業用途或二次分發。
+
+本專案開發過程中使用 AI 工具輔助，具體情況如下：
+程式碼：部分演算法、樣板程式碼與邏輯優化由 GitHub Copilot / ChatGPT 輔助生成，並經由開發者人工審閱、除錯與整合。
+美術資產：部分背景圖、材質與圖示由 AI 工具 (如 Midjourney / Stable Diffusion) 生成，並由開發者進行手動後製、修補與風格統一。
