@@ -137,7 +137,7 @@ export const BASE_STATS: Record<UnitType, UnitStats> = {
   [UnitType.Rat]:       { atk: 4, def: 5, rom: 2, rng: 1, maxCount: 1, summonCost: 5,
                           specialAbility: SpecialAbility.Blessing,
                           specialAbilities: [SpecialAbility.Blessing], isSpecial: true },
-  [UnitType.Rooster]:   { atk: 7, def: 7, rom: 2, rng: 1, maxCount: 1, summonCost: 5,
+  [UnitType.Rooster]:   { atk: 7, def: 7, rom: 2, rng: 1, maxCount: 1, summonCost: 7,
                           specialAbility: SpecialAbility.NoAbility,
                           specialAbilities: [], isSpecial: true },
   [UnitType.Worm]:      { atk: 0, def: 3, rom: 2, rng: 1, maxCount: 1, summonCost: 5,

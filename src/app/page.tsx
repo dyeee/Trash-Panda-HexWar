@@ -1,10 +1,11 @@
 "use client";
 // ============================================================
-// src/app/page.tsx — 首頁（輕量版：只輸入名稱）
+// src/app/page.tsx — 首頁
 // ============================================================
 import { useRouter } from "next/navigation";
 import { useState }  from "react";
 import { Player }    from "@/types";
+import { createRoom } from "@/lib/online/roomClient";
 
 const C = {
   bg:      "#2A3830",
@@ -18,7 +19,7 @@ const C = {
   muted:   "#7A9488",
 };
 
-type Screen = "home" | "setup";
+type Screen = "home" | "setup" | "online";
 
 export default function HomePage() {
   const router = useRouter();
@@ -38,11 +39,20 @@ export default function HomePage() {
     );
   }
 
-  return <HomeScreen onStart={() => setScreen("setup")} />;
+  if (screen === "online") {
+    return (
+      <div style={{ position: "relative" }}>
+        <BackBtn onClick={() => setScreen("home")} />
+        <OnlineSetupScreen />
+      </div>
+    );
+  }
+
+  return <HomeScreen onStart={() => setScreen("setup")} onOnline={() => setScreen("online")} />;
 }
 
 // ── 首頁畫面 ─────────────────────────────────────────────────
-function HomeScreen({ onStart }: { onStart: () => void }) {
+function HomeScreen({ onStart, onOnline }: { onStart: () => void; onOnline: () => void }) {
   return (
     <main style={{
       minHeight: "100vh", background: C.bg,
@@ -79,18 +89,25 @@ function HomeScreen({ onStart }: { onStart: () => void }) {
           </div>
           <h1 style={{
             fontFamily: "'Cinzel','Georgia',serif",
+            fontSize: "clamp(1.4rem,4vw,2.6rem)", fontWeight: 900, color: C.accent,
+            letterSpacing: "0.18em", lineHeight: 1, margin: "0 0 4px",
+            textShadow: `0 0 60px ${C.accent}44, 0 2px 0 ${C.accentD}`,
+          }}>Trash Panda</h1>
+          <h2 style={{
+            fontFamily: "'Cinzel','Georgia',serif",
             fontSize: "clamp(3rem,9vw,5.5rem)", fontWeight: 900, color: C.accent,
             letterSpacing: "0.18em", lineHeight: 1, margin: "0 0 10px",
             textShadow: `0 0 80px ${C.accent}55, 0 4px 0 ${C.accentD}`,
-          }}>HEXWAR</h1>
-          <p style={{ color: C.muted, fontSize: "0.9rem", letterSpacing: "0.3em", margin: 0, textTransform: "uppercase" }}>
-            六角格回合制策略遊戲
+          }}>HEXWAR</h2>
+          <p style={{ color: C.muted, fontSize: "0.9rem", letterSpacing: "0.15em", margin: 0 }}>
+            垃圾場爭奪戰 <span style={{ opacity: 0.6, fontSize: "0.8rem" }}>（六角格回合制策略遊戲）</span>
           </p>
         </div>
 
         {/* 開始按鈕 */}
         <div style={{ display: "flex", flexDirection: "column", gap: 12, width: 240 }}>
-          <HomeBtn primary onClick={onStart}>▶ 開始遊戲</HomeBtn>
+          <HomeBtn primary onClick={onStart}>▶ 本機雙人對戰</HomeBtn>
+          <HomeBtn primary accent="#5A9E6F" onClick={onOnline}>🌐 連線對戰</HomeBtn>
         </div>
 
         {/* 規則快覽 */}
@@ -123,6 +140,117 @@ function HomeScreen({ onStart }: { onStart: () => void }) {
         </div>
       </div>
     </main>
+  );
+}
+
+// ── 連線對戰設定畫面 ─────────────────────────────────────────
+function OnlineSetupScreen() {
+  const router = useRouter();
+  const [tab,       setTab]       = useState<"create" | "join">("create");
+  const [name,      setName]      = useState("");
+  const [roomInput, setRoomInput] = useState("");
+  const [loading,   setLoading]   = useState(false);
+  const [error,     setError]     = useState("");
+
+  const handleCreate = async () => {
+    if (!name.trim()) { setError("請輸入你的名稱"); return; }
+    setLoading(true); setError("");
+    try {
+      const { roomId, side } = await createRoom(name.trim());
+      sessionStorage.setItem(`hexwar:room:${roomId}`, JSON.stringify({ side, name: name.trim() }));
+      router.push(`/room/${roomId}`);
+    } catch (e: any) {
+      setError(e.message ?? "建立失敗，請重試");
+      setLoading(false);
+    }
+  };
+
+  const handleJoin = () => {
+    const code = roomInput.trim().toUpperCase();
+    if (!code) { setError("請輸入房間號碼"); return; }
+    router.push(`/room/${code}`);
+  };
+
+  const inputStyle: React.CSSProperties = {
+    width: "100%", padding: "11px 14px", borderRadius: 10,
+    border: `1.5px solid ${C.border}`, background: "#324038",
+    color: C.text, fontFamily: "inherit", fontSize: "0.95rem",
+    marginBottom: 10, boxSizing: "border-box", outline: "none",
+  };
+
+  return (
+    <div style={{
+      minHeight: "100vh", background: C.bg,
+      display: "flex", alignItems: "center", justifyContent: "center",
+      fontFamily: "'Noto Sans TC','Microsoft JhengHei',sans-serif",
+      color: C.text, padding: 20,
+    }}>
+      <div style={{
+        background: C.card, border: `1.5px solid ${C.border}`,
+        borderRadius: 20, padding: "32px 28px",
+        maxWidth: 400, width: "100%",
+        boxShadow: `0 0 40px ${C.accent}18`,
+      }}>
+        <div style={{ textAlign: "center", marginBottom: 24 }}>
+          <div style={{ fontSize: "2rem" }}>🌐</div>
+          <h2 style={{ color: C.accent, fontWeight: 900, fontSize: "1.4rem", margin: "6px 0 0" }}>連線對戰</h2>
+        </div>
+
+        {/* Tab */}
+        <div style={{ display: "flex", borderRadius: 10, overflow: "hidden",
+          border: `1.5px solid ${C.border}`, marginBottom: 20 }}>
+          {(["create", "join"] as const).map(t => (
+            <button key={t} onClick={() => { setTab(t); setError(""); }}
+              style={{
+                flex: 1, padding: "10px", border: "none", fontFamily: "inherit",
+                fontWeight: 700, fontSize: "0.88rem", cursor: "pointer",
+                background: tab === t ? C.accent : "transparent",
+                color: tab === t ? C.bg : C.muted,
+                transition: "all 0.15s",
+              }}>
+              {t === "create" ? "🏠 建立房間" : "🚪 加入房間"}
+            </button>
+          ))}
+        </div>
+
+        {tab === "create" ? (
+          <>
+            <label style={{ fontSize: "0.8rem", color: C.muted, display: "block", marginBottom: 4 }}>你的名稱</label>
+            <input value={name} onChange={e => setName(e.target.value)}
+              onKeyDown={e => e.key === "Enter" && handleCreate()}
+              placeholder="輸入你的名稱" maxLength={12} style={inputStyle} />
+            {error && <div style={{ color: C.red, fontSize: "0.8rem", marginBottom: 8 }}>{error}</div>}
+            <button onClick={handleCreate} disabled={loading} style={{
+              width: "100%", padding: "12px", borderRadius: 10, border: "none",
+              background: C.accent, color: C.bg, fontFamily: "inherit",
+              fontWeight: 900, fontSize: "0.95rem", cursor: loading ? "wait" : "pointer",
+              opacity: loading ? 0.6 : 1,
+            }}>
+              {loading ? "建立中…" : "建立房間 →"}
+            </button>
+            <div style={{ fontSize: "0.75rem", color: C.muted, marginTop: 12, textAlign: "center", lineHeight: 1.5 }}>
+              建立後會得到一組房間號碼，<br/>分享給朋友即可開始對戰
+            </div>
+          </>
+        ) : (
+          <>
+            <label style={{ fontSize: "0.8rem", color: C.muted, display: "block", marginBottom: 4 }}>房間號碼</label>
+            <input value={roomInput} onChange={e => setRoomInput(e.target.value.toUpperCase())}
+              onKeyDown={e => e.key === "Enter" && handleJoin()}
+              placeholder="輸入 6 碼房間號" maxLength={6}
+              style={{ ...inputStyle, letterSpacing: "0.2em", fontWeight: 800, fontSize: "1.1rem", textAlign: "center" }} />
+            {error && <div style={{ color: C.red, fontSize: "0.8rem", marginBottom: 8 }}>{error}</div>}
+            <button onClick={handleJoin} style={{
+              width: "100%", padding: "12px", borderRadius: 10, border: "none",
+              background: C.accent, color: C.bg, fontFamily: "inherit",
+              fontWeight: 900, fontSize: "0.95rem", cursor: "pointer",
+            }}>
+              加入房間 →
+            </button>
+          </>
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -230,10 +358,12 @@ function SetupScreen({ onReady }: { onReady: (blue: string, red: string) => void
 }
 
 // ── 共用子元件 ────────────────────────────────────────────────
-function HomeBtn({ children, onClick, primary = false }: {
-  children: React.ReactNode; onClick: () => void; primary?: boolean;
+function HomeBtn({ children, onClick, primary = false, accent }: {
+  children: React.ReactNode; onClick: () => void; primary?: boolean; accent?: string;
 }) {
   const [hov, setHov] = useState(false);
+  const bg    = accent ?? C.accent;
+  const bgD   = accent ? accent + "CC" : C.accentD;
   return (
     <button onClick={onClick}
       onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)}
@@ -242,9 +372,9 @@ function HomeBtn({ children, onClick, primary = false }: {
         fontFamily: "inherit", fontWeight: 800, fontSize: "1rem",
         cursor: "pointer", letterSpacing: "0.04em", transition: "all 0.18s",
         border: primary ? "none" : `1.5px solid ${C.border}`,
-        background: primary ? (hov ? C.accentD : C.accent) : (hov ? C.card : `${C.card}CC`),
+        background: primary ? (hov ? bgD : bg) : (hov ? C.card : `${C.card}CC`),
         color: primary ? "#1C2420" : (hov ? C.text : C.muted),
-        boxShadow: primary && hov ? `0 6px 24px ${C.accent}55` : "none",
+        boxShadow: primary && hov ? `0 6px 24px ${bg}55` : "none",
       }}>
       {children}
     </button>

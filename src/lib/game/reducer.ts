@@ -274,6 +274,9 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
       };
     }
 
+    case "LOAD_STATE":
+      return { ...action.gameState };
+
     default:
       return state;
   }

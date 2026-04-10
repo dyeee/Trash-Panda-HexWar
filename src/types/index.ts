@@ -165,4 +165,5 @@ export type GameAction =
   | { type: "SELECT_UNIT";       unitId: string | null }
   | { type: "RESHUFFLE_MAP" }
   | { type: "CONFIRM_MAP" }
-  | { type: "CLEAR_MISS_EFFECT"; unitId: string };
+  | { type: "CLEAR_MISS_EFFECT"; unitId: string }
+  | { type: "LOAD_STATE";        gameState: GameState };
