@@ -43,29 +43,14 @@ const HexCanvas = forwardRef<HexCanvasHandle, HexCanvasProps>(function HexCanvas
   const [cursor,  setCursor]  = useState<CursorMode>("default");
   const [popups,  setPopups]  = useState<ScorePopup[]>([]);
 
-  // flat-top 地圖：7欄(A-G)，最多5列
-  // 寬度方向：7欄 × (1.5 × hexSize) + 0.5 × hexSize（首欄偏移）≈ 6.5 × 2 × r × cos30
-  // 用安全公式：cols=7, rows=5（最大欄）
-  // flat-top: width  = hexSize * (3/2 * (cols-1) + 2)
-  //           height = hexSize * sqrt(3) * (rows + 0.5)
-  const hexSize = useMemo(() => {
-    const w = size.w;
-    const h = size.h;
-    // flat-top: 7 cols → width  ≈ hexSize * (1.5 * 6 + 2) = hexSize * 11
-    //           5 rows → height ≈ hexSize * 1.732 * 5.5
-    const byW = Math.floor(w / 11);
-    const byH = Math.floor(h / (1.732 * 5.5));
-    // 取兩者較小值，並限制 32~80 範圍
-    return Math.max(32, Math.min(80, Math.min(byW, byH)));
-  }, [size]);
-
+  const hexSize = configOverride?.hexSize ?? DEFAULT_CANVAS_CONFIG.hexSize;
   const config  = useMemo<CanvasConfig>(() => ({
     ...DEFAULT_CANVAS_CONFIG,
     ...configOverride,
     hexSize,
     offsetX: sizeRef.current.w / 2,
     offsetY: sizeRef.current.h / 2,
-  }), [hexSize, size, configOverride]);
+  }), [hexSize, size]);
 
   // ── PNG 預載 ────────────────────────────────────────────
   useEffect(() => {
@@ -141,22 +126,6 @@ const HexCanvas = forwardRef<HexCanvasHandle, HexCanvasProps>(function HexCanvas
 
   // 暴露給父元件（forwardRef）
   useImperativeHandle(ref, () => ({ _addPopup: addPopup }), [addPopup]);
-
-  // ── Touch：手機點擊支援 ──────────────────────────────────
-  const handleTouchEnd = useCallback((e: React.TouchEvent<HTMLCanvasElement>) => {
-    e.preventDefault(); // 防止 300ms delay 和雙擊縮放
-    const canvas = canvasRef.current;
-    if (!canvas || e.changedTouches.length === 0) return;
-    const touch = e.changedTouches[0];
-    const rect  = canvas.getBoundingClientRect();
-    const coord = pixelToHex(
-      touch.clientX - rect.left,
-      touch.clientY - rect.top,
-      config.hexSize, config.offsetX, config.offsetY
-    );
-    const inMap = state.tiles.some(t => t.coord.q === coord.q && t.coord.r === coord.r);
-    if (inMap) onTileClick(coord);
-  }, [state.tiles, config, onTileClick]);
 
   // ── 點擊 ────────────────────────────────────────────────
   const handleClick = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
@@ -285,11 +254,10 @@ const HexCanvas = forwardRef<HexCanvasHandle, HexCanvasProps>(function HexCanvas
       <canvas
         ref={canvasRef}
         onClick={handleClick}
-        onTouchEnd={handleTouchEnd}
         onMouseMove={handleMouseMove}
         onMouseLeave={handleMouseLeave}
         className={className}
-        style={{ display: "block", width: "100%", height: "100%", cursor: cursorStyle[cursor], touchAction: "none" }}
+        style={{ display: "block", width: "100%", height: "100%", cursor: cursorStyle[cursor] }}
       />
 
       {/* Tooltip */}
